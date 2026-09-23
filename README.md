@@ -14,7 +14,7 @@ Sebelum menjalankan proyek ini, pastikan Anda telah menginstal:
 ### 1. Setup Database
 Pastikan server MySQL berjalan. Buat database baru untuk aplikasi ini:
 ```sql
-CREATE DATABASE absensi_asrama;
+CREATE DATABASE pabf;
 ```
 
 ### 2. Setup Virtual Environment (Disarankan)
@@ -56,32 +56,81 @@ UPLOAD_FOLDER=uploads
 ```
 *Catatan: Sesuaikan `DB_USERNAME` dan `DB_PASSWORD` dengan konfigurasi MySQL di komputer Anda.*
 
-### 5. Migrasi Database (Opsional/Jika Diperlukan)
-Jika terdapat pembaruan skema database (menggunakan Flask-Migrate), Anda bisa menjalankan migrasi dengan cara:
+### 5. Menjalankan Migrasi Database & Seeder
+Database dikelola menggunakan **Flask-Migrate** (Alembic). Jalankan perintah berikut untuk memastikan struktur tabel terbaru diaplikasikan ke database MySQL:
+
 ```bash
 flask db upgrade
 ```
-*Catatan: Pastikan Anda berada dalam virtual environment yang aktif.*
 
-## Menjalankan Aplikasi
+Setelah struktur tabel terbentuk, jalankan script `seed.py` untuk mengisi data akun awal untuk keperluan pengujian:
+```bash
+python seed.py
+```
+
+**Akun Demo Bawaan:**
+- **Mahasiswa:** NIM: `2211522001`, Kata Sandi: `password123`
+- **Admin:** NIM: `admin`, Kata Sandi: `admin123`
+
+---
+
+## Panduan Migrasi Database (Flask-Migrate)
+
+Gunakan alur migrasi ini setiap kali Anda **menambah tabel baru** atau **mengubah kolom** pada database:
+
+### 1. Menambahkan Model / Mengubah Kolom
+1. Tambahkan model baru di dalam folder `app/models/` (misal: `app/models/absensi.py`).
+2. Pastikan model baru tersebut di-import ke dalam `app/models/__init__.py` agar terbaca oleh Flask-Migrate.
+
+### 2. Membuat Skrip Migrasi Otomatis
+Jalankan perintah ini di terminal untuk mendeteksi perubahan model dan membuat file migrasi baru:
+```bash
+flask db migrate -m "deskripsi perubahan, misal: membuat tabel absensi"
+```
+File migrasi baru akan otomatis terbuat di folder `migrations/versions/`.
+
+### 3. Menerapkan Perubahan ke Database
+Jalankan perintah ini untuk mengeksekusi perubahan DDL (`CREATE TABLE`, `ALTER TABLE`) ke database MySQL:
+```bash
+flask db upgrade
+```
+
+### 4. Membatalkan Perubahan (Rollback)
+Jika ada kesalahan pada migrasi terakhir dan Anda ingin mengembalikannya:
+```bash
+flask db downgrade
+```
+
+---
+
+## Menjalankan Aplikasi (Development)
 
 Setelah semua setup selesai, Anda dapat menjalankan server backend dengan perintah:
 ```bash
 python run.py
 ```
-atau (jika Anda ingin menggunakan perintah flask secara langsung):
+atau:
 ```bash
 flask run
 ```
 
-Server akan berjalan secara default di `http://127.0.0.1:5000/`.
+Server backend akan berjalan di `http://127.0.0.1:5000/`.
+
+---
 
 ## Struktur Direktori Utama
 
-- `app/` : Berisi kode utama aplikasi (models, routes, auth, dll).
+- `app/` : Berisi kode utama aplikasi (models, routes, auth, core, dll).
+  - `models/` : Model database SQLAlchemy (`user.py`, dll).
+  - `routes/` : Endpoint API Flask (`auth_routes.py`, dll).
+  - `core/` : Ekstensi aplikasi (`extensions.py` untuk db, jwt, migrate, cors).
+- `migrations/` : Riwayat version control skema database (Alembic / Flask-Migrate).
+  - `versions/` : File-file revisi migrasi yang dijalankan ke database.
 - `uploads/` : Folder tempat menyimpan file hasil upload.
 - `venv/` : Virtual environment Python.
 - `.env` : File konfigurasi kredensial dan variabel environment.
 - `config.py` : Pengaturan konfigurasi aplikasi Flask.
 - `requirements.txt` : Daftar semua dependensi library Python.
-- `run.py` : Entry point untuk menjalankan aplikasi Flask.
+- `run.py` : Entry point untuk menjalankan aplikasi Flask (Development).
+- `seed.py` : Script inisialisasi database dan akun awal.
+- `wsgi.py` : Entry point untuk menjalankan aplikasi via WSGI server (Production).
