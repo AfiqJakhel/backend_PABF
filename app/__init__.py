@@ -1,7 +1,7 @@
 from flask import Flask
 from config import DevelopmentConfig
 from .core.extensions import db, jwt, cors, migrate
-from .models import User
+from .models import User, Gedung, Kamar, Presensi, Izin
 from .routes import auth_bp
 
 def create_app(config_class=DevelopmentConfig):
