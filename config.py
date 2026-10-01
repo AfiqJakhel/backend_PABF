@@ -39,6 +39,10 @@ class Config:
     )
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16 MB max file size
 
+    GEOFENCE_CENTER_LATITUDE = float(os.getenv('GEOFENCE_CENTER_LATITUDE', '-0.9147'))
+    GEOFENCE_CENTER_LONGITUDE = float(os.getenv('GEOFENCE_CENTER_LONGITUDE', '100.4583'))
+    GEOFENCE_RADIUS_METERS = float(os.getenv('GEOFENCE_RADIUS_METERS', '250'))
+
 
 class DevelopmentConfig(Config):
     DEBUG = True

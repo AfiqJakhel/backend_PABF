@@ -8,6 +8,7 @@ Prefix Blueprint: /api/fasil
 
 from flask import Blueprint
 from app.middlewares.fasil_middleware import fasil_required
+from app.middlewares.auth_middleware import admin_required
 
 # Import controller functions
 from app.controllers.fasil_sesi_controller import (
@@ -29,6 +30,7 @@ from app.controllers.fasil_izin_controller import (
     get_detail_izin,
     proses_izin,
 )
+from app.controllers.user_controller import import_users_file
 
 # ─── Blueprint Definition ────────────────────────────────────────────────────
 fasil_bp = Blueprint('fasil', __name__)
@@ -117,6 +119,13 @@ fasil_bp.add_url_rule(
     view_func=fasil_required(update_presensi_manual),
     methods=['PATCH'],
     endpoint='update_presensi_manual'
+)
+
+fasil_bp.add_url_rule(
+    '/users/import',
+    view_func=admin_required(import_users_file),
+    methods=['POST'],
+    endpoint='import_users_file'
 )
 
 

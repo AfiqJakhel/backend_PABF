@@ -9,6 +9,8 @@ from app.core.extensions import db
 from app.models.presensi import Presensi
 from app.models.izin import Izin
 from app.models.user import User
+from app.models.kamar import Kamar
+from app.models.gedung import Gedung
 
 
 class PresensiRepository:
@@ -93,10 +95,14 @@ class PresensiRepository:
             db.session.query(
                 User.nim,
                 User.nama,
+                Gedung.nama_gedung,
+                Kamar.nomor_kamar,
                 Presensi.status,
                 func.count(Presensi.id).label('jumlah')
             )
             .join(Presensi, User.id == Presensi.user_id)
+            .outerjoin(Kamar, User.kamar_id == Kamar.id)
+            .outerjoin(Gedung, Kamar.gedung_id == Gedung.id)
             .filter(
                 Presensi.tanggal >= tanggal_mulai,
                 Presensi.tanggal <= tanggal_selesai,
@@ -106,14 +112,18 @@ class PresensiRepository:
         if tipe_sesi:
             query = query.filter(Presensi.sesi == tipe_sesi)
 
-        rows = query.group_by(User.nim, User.nama, Presensi.status).all()
+        rows = query.group_by(
+            User.nim, User.nama, Gedung.nama_gedung, Kamar.nomor_kamar, Presensi.status
+        ).all()
 
         # Pivot: struktur per mahasiswa
         summary: dict = {}
-        for nim, nama, status, jumlah in rows:
+        for nim, nama, nama_gedung, nomor_kamar, status, jumlah in rows:
             if nim not in summary:
                 summary[nim] = {
                     'nim': nim, 'nama': nama,
+                    'gedung': nama_gedung,
+                    'kamar': nomor_kamar,
                     'hadir': 0, 'terlambat': 0,
                     'alfa': 0, 'izin': 0, 'sakit': 0
                 }
@@ -124,6 +134,9 @@ class PresensiRepository:
         result = []
         for data in summary.values():
             data['total'] = sum(data[k] for k in ('hadir', 'terlambat', 'alfa', 'izin', 'sakit'))
+            data['persentase'] = round(
+                ((data['hadir'] + data['terlambat']) / data['total']) * 100, 2
+            ) if data['total'] else 0
             result.append(data)
 
         return sorted(result, key=lambda x: x['nama'])
