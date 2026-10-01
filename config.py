@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -29,6 +30,7 @@ class Config:
 
     # JWT — nilai aktual diatur di .env
     JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'change-me-in-production')
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=8)
 
     # Uploads
     UPLOAD_FOLDER = os.path.join(
