@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -29,6 +30,7 @@ class Config:
 
     # JWT — nilai aktual diatur di .env
     JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'change-me-in-production')
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=8)
 
     # Uploads
     UPLOAD_FOLDER = os.path.join(
@@ -36,6 +38,10 @@ class Config:
         os.getenv('UPLOAD_FOLDER', 'uploads')
     )
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16 MB max file size
+
+    GEOFENCE_CENTER_LATITUDE = float(os.getenv('GEOFENCE_CENTER_LATITUDE', '-0.9147'))
+    GEOFENCE_CENTER_LONGITUDE = float(os.getenv('GEOFENCE_CENTER_LONGITUDE', '100.4583'))
+    GEOFENCE_RADIUS_METERS = float(os.getenv('GEOFENCE_RADIUS_METERS', '250'))
 
 
 class DevelopmentConfig(Config):
