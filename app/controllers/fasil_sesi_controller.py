@@ -6,6 +6,7 @@ Bertanggung jawab atas:
   - Menutup atau memperbarui sesi
 """
 
+from datetime import datetime
 from flask import request, jsonify
 from flask_jwt_extended import get_jwt_identity
 from app.services.fasil_service import SesiAbsensiService
@@ -30,7 +31,7 @@ def buat_sesi():
     if errors:
         return jsonify({
             "success": False,
-            "message": "Validasi gagal.",
+            "message": errors[0],
             "errors": errors,
             "data": None
         }), 422
@@ -39,7 +40,7 @@ def buat_sesi():
     sesi_data = SesiAbsensiService.buat_sesi(parsed, fasil_id)
     return jsonify({
         "success": True,
-        "message": "Sesi absensi berhasil dibuat.",
+        "message": "Jadwal kegiatan berhasil dibuat.",
         "data": sesi_data
     }), 201
 
@@ -65,6 +66,7 @@ def get_daftar_sesi():
     if "error" in result:
         return jsonify({"success": False, "message": result["error"], "data": None}), 400
 
+    result["server_time"] = datetime.now().isoformat()
     return jsonify({"success": True, "message": "Daftar sesi berhasil diambil.", "data": result}), 200
 
 
@@ -132,3 +134,17 @@ def tutup_sesi(sesi_id: int):
         return jsonify({"success": False, "message": error, "data": None}), status_code
 
     return jsonify({"success": True, "message": "Sesi berhasil ditutup.", "data": result}), 200
+
+
+def hapus_sesi(sesi_id: int):
+    """
+    DELETE /api/fasil/sesi/<sesi_id>
+    Menghapus jadwal kegiatan / sesi absensi secara permanen.
+    """
+    from app.repositories.sesi_absensi_repository import SesiAbsensiRepository
+    sesi = SesiAbsensiRepository.get_by_id(sesi_id)
+    if not sesi:
+        return jsonify({"success": False, "message": "Jadwal kegiatan tidak ditemukan.", "data": None}), 404
+
+    SesiAbsensiRepository.delete(sesi)
+    return jsonify({"success": True, "message": "Jadwal kegiatan berhasil dihapus.", "data": None}), 200

@@ -103,19 +103,20 @@ class PresensiService:
     """Business logic untuk monitoring dan pengelolaan presensi oleh Fasilitator."""
 
     @staticmethod
-    def get_rekap_sesi(tipe_sesi: str, tanggal_str: str) -> tuple:
+    def get_rekap_sesi(tipe_sesi: str, tanggal_str: str, gedung_id: int = None) -> tuple:
         """
         Ambil rekapitulasi lengkap satu sesi:
         - Daftar mahasiswa yang SUDAH absen (beserta statusnya).
         - Daftar mahasiswa yang BELUM absen.
+        Dibatasi pada gedung_id fasilitator jika disertakan.
         """
         try:
             tanggal = date.fromisoformat(tanggal_str)
         except (ValueError, TypeError):
             return None, "Format 'tanggal' tidak valid. Gunakan YYYY-MM-DD."
 
-        sudah = PresensiRepository.get_by_sesi(tipe_sesi, tanggal)
-        belum = PresensiRepository.get_mahasiswa_belum_absen(tipe_sesi, tanggal)
+        sudah = PresensiRepository.get_by_sesi(tipe_sesi, tanggal, gedung_id=gedung_id)
+        belum = PresensiRepository.get_mahasiswa_belum_absen(tipe_sesi, tanggal, gedung_id=gedung_id)
 
         return {
             "tanggal": tanggal_str,
@@ -193,7 +194,8 @@ class PresensiService:
         user_id: int = None,
         page: int = 1,
         per_page: int = 20,
-        summary: bool = False
+        summary: bool = False,
+        gedung_id: int = None
     ) -> tuple:
         """
         Ambil rekapitulasi presensi berdasarkan rentang tanggal.
@@ -210,7 +212,7 @@ class PresensiService:
             return None, "'tanggal_selesai' tidak boleh sebelum 'tanggal_mulai'."
 
         if summary:
-            data = PresensiRepository.get_rekap_summary(tgl_mulai, tgl_selesai, tipe_sesi)
+            data = PresensiRepository.get_rekap_summary(tgl_mulai, tgl_selesai, tipe_sesi, gedung_id=gedung_id)
             return {
                 "tanggal_mulai": tanggal_mulai_str,
                 "tanggal_selesai": tanggal_selesai_str,
@@ -220,7 +222,7 @@ class PresensiService:
             }, None
         else:
             pagination = PresensiRepository.get_rekap(
-                tgl_mulai, tgl_selesai, tipe_sesi, user_id, page, per_page
+                tgl_mulai, tgl_selesai, tipe_sesi, user_id, page, per_page, gedung_id=gedung_id
             )
             return {
                 "tanggal_mulai": tanggal_mulai_str,
@@ -239,9 +241,9 @@ class IzinService:
     """Business logic untuk pengelolaan pengajuan izin oleh Fasilitator."""
 
     @staticmethod
-    def get_daftar_izin(status: str = None, page: int = 1, per_page: int = 15) -> dict:
-        """Ambil semua pengajuan izin dengan filter status opsional."""
-        pagination = IzinRepository.get_all(status=status, page=page, per_page=per_page)
+    def get_daftar_izin(status: str = None, page: int = 1, per_page: int = 15, gedung_id: int = None) -> dict:
+        """Ambil semua pengajuan izin dengan filter status dan gedung opsional."""
+        pagination = IzinRepository.get_all(status=status, page=page, per_page=per_page, gedung_id=gedung_id)
         return {
             "items": [i.to_dict() for i in pagination.items],
             "total": pagination.total,

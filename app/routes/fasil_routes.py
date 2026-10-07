@@ -18,12 +18,15 @@ from app.controllers.fasil_sesi_controller import (
     get_detail_sesi,
     update_sesi,
     tutup_sesi,
+    hapus_sesi,
 )
 from app.controllers.fasil_presensi_controller import (
     get_rekap_sesi,
     update_presensi_manual,
     input_presensi_manual,
     get_rekap_rentang,
+    get_daftar_verifikasi,
+    export_rekap,
 )
 from app.controllers.fasil_izin_controller import (
     get_daftar_izin,
@@ -31,6 +34,22 @@ from app.controllers.fasil_izin_controller import (
     proses_izin,
 )
 from app.controllers.user_controller import import_users_file
+from app.controllers.fasil_mahasiswa_controller import (
+    get_gedung_saya,
+    get_mahasiswa_fasil,
+    tambah_mahasiswa_fasil,
+    update_mahasiswa_fasil,
+    hapus_mahasiswa_fasil,
+    download_template_csv,
+    import_mahasiswa_csv,
+)
+from app.controllers.fasil_polygon_controller import (
+    get_polygon_fasil,
+    buat_polygon_fasil,
+    update_polygon_fasil,
+    hapus_polygon_fasil,
+    toggle_active_polygon_fasil,
+)
 
 # ─── Blueprint Definition ────────────────────────────────────────────────────
 fasil_bp = Blueprint('fasil', __name__)
@@ -86,6 +105,14 @@ fasil_bp.add_url_rule(
     endpoint='tutup_sesi'
 )
 
+# DELETE /api/fasil/sesi/<id>      → Hapus jadwal kegiatan / sesi
+fasil_bp.add_url_rule(
+    '/sesi/<int:sesi_id>',
+    view_func=fasil_required(hapus_sesi),
+    methods=['DELETE'],
+    endpoint='hapus_sesi'
+)
+
 
 # ─── Presensi Routes ─────────────────────────────────────────────────────────
 
@@ -105,6 +132,14 @@ fasil_bp.add_url_rule(
     endpoint='get_rekap_rentang'
 )
 
+# GET  /api/fasil/presensi/verifikasi    → Daftar foto presensi untuk verifikasi fasilitator
+fasil_bp.add_url_rule(
+    '/presensi/verifikasi',
+    view_func=fasil_required(get_daftar_verifikasi),
+    methods=['GET'],
+    endpoint='get_daftar_verifikasi'
+)
+
 # POST /api/fasil/presensi/manual        → Input presensi manual (mahasiswa belum absen)
 fasil_bp.add_url_rule(
     '/presensi/manual',
@@ -119,6 +154,14 @@ fasil_bp.add_url_rule(
     view_func=fasil_required(update_presensi_manual),
     methods=['PATCH'],
     endpoint='update_presensi_manual'
+)
+
+# GET   /api/fasil/presensi/export         → Export rekap presensi CSV (Terkunci ke gedung binaan)
+fasil_bp.add_url_rule(
+    '/presensi/export',
+    view_func=fasil_required(export_rekap),
+    methods=['GET'],
+    endpoint='export_rekap'
 )
 
 fasil_bp.add_url_rule(
@@ -154,3 +197,107 @@ fasil_bp.add_url_rule(
     methods=['PATCH'],
     endpoint='proses_izin'
 )
+
+
+# ─── Gedung & Mahasiswa Asrama Routes (Building-Scoped) ─────────────────────
+
+# GET    /api/fasil/gedung-saya            → Profil gedung binaan & daftar kamar
+fasil_bp.add_url_rule(
+    '/gedung-saya',
+    view_func=fasil_required(get_gedung_saya),
+    methods=['GET'],
+    endpoint='get_gedung_saya'
+)
+
+# GET    /api/fasil/mahasiswa              → Daftar mahasiswa gedung binaan (filter search & kamar)
+fasil_bp.add_url_rule(
+    '/mahasiswa',
+    view_func=fasil_required(get_mahasiswa_fasil),
+    methods=['GET'],
+    endpoint='get_mahasiswa_fasil'
+)
+
+# POST   /api/fasil/mahasiswa              → Tambah mahasiswa baru ke kamar gedung binaan
+fasil_bp.add_url_rule(
+    '/mahasiswa',
+    view_func=fasil_required(tambah_mahasiswa_fasil),
+    methods=['POST'],
+    endpoint='tambah_mahasiswa_fasil'
+)
+
+# PUT    /api/fasil/mahasiswa/<id>         → Update data mahasiswa gedung binaan (Anti-IDOR)
+fasil_bp.add_url_rule(
+    '/mahasiswa/<int:student_id>',
+    view_func=fasil_required(update_mahasiswa_fasil),
+    methods=['PUT'],
+    endpoint='update_mahasiswa_fasil'
+)
+
+# DELETE /api/fasil/mahasiswa/<id>         → Hapus mahasiswa gedung binaan (Anti-IDOR)
+fasil_bp.add_url_rule(
+    '/mahasiswa/<int:student_id>',
+    view_func=fasil_required(hapus_mahasiswa_fasil),
+    methods=['DELETE'],
+    endpoint='hapus_mahasiswa_fasil'
+)
+
+# GET    /api/fasil/mahasiswa/template-csv → Unduh template CSV untuk import mahasiswa
+fasil_bp.add_url_rule(
+    '/mahasiswa/template-csv',
+    view_func=fasil_required(download_template_csv),
+    methods=['GET'],
+    endpoint='download_template_csv'
+)
+
+# POST   /api/fasil/mahasiswa/import-csv   → Import CSV mahasiswa (Otomatis ke gedung binaan)
+fasil_bp.add_url_rule(
+    '/mahasiswa/import-csv',
+    view_func=fasil_required(import_mahasiswa_csv),
+    methods=['POST'],
+    endpoint='import_mahasiswa_csv'
+)
+
+
+# ─── Polygon Area Absensi Routes (Building-Scoped) ──────────────────────────
+
+# GET    /api/fasil/polygon                → Daftar polygon gedung binaan
+fasil_bp.add_url_rule(
+    '/polygon',
+    view_func=fasil_required(get_polygon_fasil),
+    methods=['GET'],
+    endpoint='get_polygon_fasil'
+)
+
+# POST   /api/fasil/polygon                → Buat polygon baru khusus gedung binaan
+fasil_bp.add_url_rule(
+    '/polygon',
+    view_func=fasil_required(buat_polygon_fasil),
+    methods=['POST'],
+    endpoint='buat_polygon_fasil'
+)
+
+# PUT    /api/fasil/polygon/<id>           → Update polygon gedung binaan (Anti-IDOR)
+fasil_bp.add_url_rule(
+    '/polygon/<int:area_id>',
+    view_func=fasil_required(update_polygon_fasil),
+    methods=['PUT'],
+    endpoint='update_polygon_fasil'
+)
+
+# DELETE /api/fasil/polygon/<id>           → Hapus polygon gedung binaan (Anti-IDOR)
+fasil_bp.add_url_rule(
+    '/polygon/<int:area_id>',
+    view_func=fasil_required(hapus_polygon_fasil),
+    methods=['DELETE'],
+    endpoint='hapus_polygon_fasil'
+)
+
+# PATCH  /api/fasil/polygon/<id>/toggle    → Toggle aktif polygon gedung binaan (Anti-IDOR)
+fasil_bp.add_url_rule(
+    '/polygon/<int:area_id>/toggle',
+    view_func=fasil_required(toggle_active_polygon_fasil),
+    methods=['PATCH'],
+    endpoint='toggle_active_polygon_fasil'
+)
+
+

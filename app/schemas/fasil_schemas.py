@@ -32,7 +32,7 @@ def _parse_datetime(value: str, field_name: str) -> tuple:
 
 def validate_buat_sesi(data: dict) -> tuple:
     """
-    Validasi payload untuk membuat sesi absensi baru.
+    Validasi payload untuk membuat sesi absensi / jadwal kegiatan baru.
     Return: (errors: list, parsed_data: dict)
     """
     errors = []
@@ -48,14 +48,21 @@ def validate_buat_sesi(data: dict) -> tuple:
         parsed["nama_sesi"] = nama_sesi
 
     # tipe_sesi
-    tipe_sesi = data.get("tipe_sesi", "malam").strip().lower()
+    tipe_sesi = data.get("tipe_sesi", "kegiatan").strip().lower()
     if tipe_sesi not in TIPE_SESI_VALID:
         errors.append(f"'tipe_sesi' harus salah satu dari: {', '.join(sorted(TIPE_SESI_VALID))}.")
     else:
         parsed["tipe_sesi"] = tipe_sesi
 
-    # waktu_mulai
-    waktu_mulai_str = data.get("waktu_mulai", "")
+    # tanggal & waktu_mulai
+    waktu_mulai_str = data.get("waktu_mulai", "").strip()
+    tanggal_str = data.get("tanggal", "").strip()
+    jam_mulai_str = data.get("jam_mulai", "").strip()
+
+    # Jika dikirim terpisah: tanggal (YYYY-MM-DD) dan jam_mulai (HH:MM)
+    if not waktu_mulai_str and tanggal_str and jam_mulai_str:
+        waktu_mulai_str = f"{tanggal_str}T{jam_mulai_str}:00"
+
     if not waktu_mulai_str:
         errors.append("'waktu_mulai' wajib diisi.")
     else:
@@ -63,23 +70,26 @@ def validate_buat_sesi(data: dict) -> tuple:
         if err:
             errors.append(err)
         else:
-            parsed["waktu_mulai"] = dt
+            # Validasi masa lalu berdasarkan waktu server sekarang
+            now = datetime.now()
+            if dt <= now:
+                errors.append("Jadwal tidak dapat dibuat karena waktu yang dipilih sudah berlalu.")
+            else:
+                parsed["waktu_mulai"] = dt
+                parsed["tanggal"] = dt.date()
 
-    # waktu_selesai
-    waktu_selesai_str = data.get("waktu_selesai", "")
-    if not waktu_selesai_str:
-        errors.append("'waktu_selesai' wajib diisi.")
-    else:
-        dt, err = _parse_datetime(waktu_selesai_str, "waktu_selesai")
+    # waktu_selesai (SEKARANG OPSIONAL - dihapus dari kebutuhan utama)
+    waktu_selesai_str = data.get("waktu_selesai", "").strip() if data.get("waktu_selesai") else ""
+    if waktu_selesai_str:
+        dt_end, err = _parse_datetime(waktu_selesai_str, "waktu_selesai")
         if err:
             errors.append(err)
         else:
-            parsed["waktu_selesai"] = dt
-
-    # Validasi urutan waktu (hanya jika keduanya valid)
-    if "waktu_mulai" in parsed and "waktu_selesai" in parsed:
-        if parsed["waktu_selesai"] <= parsed["waktu_mulai"]:
-            errors.append("'waktu_selesai' harus lebih besar dari 'waktu_mulai'.")
+            parsed["waktu_selesai"] = dt_end
+            if "waktu_mulai" in parsed and dt_end <= parsed["waktu_mulai"]:
+                errors.append("'waktu_selesai' harus lebih besar dari 'waktu_mulai'.")
+    else:
+        parsed["waktu_selesai"] = None
 
     # keterangan (opsional)
     parsed["keterangan"] = data.get("keterangan", None)
@@ -114,13 +124,35 @@ def validate_update_sesi(data: dict) -> tuple:
         else:
             parsed["nama_sesi"] = nama_sesi
 
-    # waktu_selesai (untuk perpanjangan atau pengurungan waktu)
-    if "waktu_selesai" in data:
-        dt, err = _parse_datetime(data["waktu_selesai"], "waktu_selesai")
+    # waktu_mulai (jika diedit)
+    waktu_mulai_str = str(data.get("waktu_mulai", "")).strip() if data.get("waktu_mulai") else ""
+    tanggal_str = str(data.get("tanggal", "")).strip() if data.get("tanggal") else ""
+    jam_mulai_str = str(data.get("jam_mulai", "")).strip() if data.get("jam_mulai") else ""
+    if not waktu_mulai_str and tanggal_str and jam_mulai_str:
+        waktu_mulai_str = f"{tanggal_str}T{jam_mulai_str}:00"
+
+    if waktu_mulai_str:
+        dt, err = _parse_datetime(waktu_mulai_str, "waktu_mulai")
         if err:
             errors.append(err)
         else:
-            parsed["waktu_selesai"] = dt
+            now = datetime.now()
+            if dt <= now:
+                errors.append("Jadwal tidak dapat diubah ke waktu yang sudah berlalu.")
+            else:
+                parsed["waktu_mulai"] = dt
+                parsed["tanggal"] = dt.date()
+
+    # waktu_selesai (opsional)
+    if "waktu_selesai" in data:
+        if data["waktu_selesai"]:
+            dt, err = _parse_datetime(str(data["waktu_selesai"]).strip(), "waktu_selesai")
+            if err:
+                errors.append(err)
+            else:
+                parsed["waktu_selesai"] = dt
+        else:
+            parsed["waktu_selesai"] = None
 
     # keterangan
     if "keterangan" in data:

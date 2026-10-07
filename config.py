@@ -43,6 +43,10 @@ class Config:
     GEOFENCE_CENTER_LONGITUDE = float(os.getenv('GEOFENCE_CENTER_LONGITUDE', '100.4583'))
     GEOFENCE_RADIUS_METERS = float(os.getenv('GEOFENCE_RADIUS_METERS', '250'))
 
+    # Batas maksimal akurasi GPS (meter).
+    # Jika accuracy > nilai ini, absensi ditolak.
+    MAX_GPS_ACCURACY_METERS = float(os.getenv('MAX_GPS_ACCURACY_METERS', '50'))
+
 
 class DevelopmentConfig(Config):
     DEBUG = True

@@ -42,7 +42,10 @@ class SesiAbsensiRepository:
         return SesiAbsensi.query.filter(
             SesiAbsensi.status == 'aktif',
             SesiAbsensi.waktu_mulai <= now,
-            SesiAbsensi.waktu_selesai >= now,
+            db.or_(
+                SesiAbsensi.waktu_selesai.is_(None),
+                SesiAbsensi.waktu_selesai >= now
+            )
         ).order_by(SesiAbsensi.waktu_mulai.asc()).all()
 
     @staticmethod

@@ -17,38 +17,50 @@ class PresensiRepository:
     """Data Access Object untuk tabel presensi (operasi fasilitator)."""
 
     @staticmethod
-    def get_by_sesi(tipe_sesi: str, tanggal: date) -> list[Presensi]:
+    def get_by_sesi(tipe_sesi: str, tanggal: date, gedung_id: int = None) -> list[Presensi]:
         """
         Ambil semua record presensi untuk tipe sesi dan tanggal tertentu.
-        Berguna untuk monitoring real-time kehadiran pada satu sesi.
+        Jika gedung_id diberikan, batasi pada gedung tersebut.
         """
-        return (
-            Presensi.query
-            .filter(Presensi.sesi == tipe_sesi, Presensi.tanggal == tanggal)
-            .all()
-        )
+        query = Presensi.query.filter(Presensi.sesi == tipe_sesi, Presensi.tanggal == tanggal)
+        if gedung_id is not None:
+            query = query.filter(
+                db.or_(
+                    Presensi.gedung_id == gedung_id,
+                    Presensi.user.has(User.kamar_ref.has(Kamar.gedung_id == gedung_id))
+                )
+            )
+        return query.all()
 
     @staticmethod
-    def get_mahasiswa_belum_absen(tipe_sesi: str, tanggal: date) -> list[User]:
+    def get_mahasiswa_belum_absen(tipe_sesi: str, tanggal: date, gedung_id: int = None) -> list[User]:
         """
         Ambil daftar mahasiswa (role='mahasiswa') yang BELUM melakukan absensi
         pada tipe sesi dan tanggal tertentu.
+        Jika gedung_id diberikan, hanya ambil mahasiswa yang kamarnya di gedung tersebut.
         """
         # Subquery: user_id yang sudah absen
-        sudah_absen_ids = db.session.query(Presensi.user_id).filter(
+        presensi_sub = db.session.query(Presensi.user_id).filter(
             Presensi.sesi == tipe_sesi,
             Presensi.tanggal == tanggal
-        ).subquery()
-
-        return (
-            User.query
-            .filter(
-                User.role == 'mahasiswa',
-                ~User.id.in_(sudah_absen_ids)
-            )
-            .order_by(User.nama.asc())
-            .all()
         )
+        if gedung_id is not None:
+            presensi_sub = presensi_sub.filter(
+                db.or_(
+                    Presensi.gedung_id == gedung_id,
+                    Presensi.user.has(User.kamar_ref.has(Kamar.gedung_id == gedung_id))
+                )
+            )
+        sudah_absen_ids = presensi_sub.subquery()
+
+        query = User.query.filter(
+            User.role == 'mahasiswa',
+            ~User.id.in_(sudah_absen_ids)
+        )
+        if gedung_id is not None:
+            query = query.filter(User.kamar_ref.has(Kamar.gedung_id == gedung_id))
+
+        return query.order_by(User.nama.asc()).all()
 
     @staticmethod
     def get_by_id(presensi_id: int) -> Presensi | None:
@@ -62,16 +74,24 @@ class PresensiRepository:
         tipe_sesi: str = None,
         user_id: int = None,
         page: int = 1,
-        per_page: int = 20
+        per_page: int = 20,
+        gedung_id: int = None
     ):
         """
         Ambil rekapitulasi presensi berdasarkan rentang tanggal.
-        Mendukung filter per tipe sesi dan per mahasiswa, dengan pagination.
+        Mendukung filter per tipe sesi, per mahasiswa, dan per gedung.
         """
         query = Presensi.query.filter(
             Presensi.tanggal >= tanggal_mulai,
             Presensi.tanggal <= tanggal_selesai
         )
+        if gedung_id is not None:
+            query = query.filter(
+                db.or_(
+                    Presensi.gedung_id == gedung_id,
+                    Presensi.user.has(User.kamar_ref.has(Kamar.gedung_id == gedung_id))
+                )
+            )
         if tipe_sesi:
             query = query.filter(Presensi.sesi == tipe_sesi)
         if user_id:
@@ -85,7 +105,8 @@ class PresensiRepository:
     def get_rekap_summary(
         tanggal_mulai: date,
         tanggal_selesai: date,
-        tipe_sesi: str = None
+        tipe_sesi: str = None,
+        gedung_id: int = None
     ) -> list[dict]:
         """
         Hitung ringkasan kehadiran per mahasiswa dalam rentang tanggal.
@@ -109,6 +130,13 @@ class PresensiRepository:
                 User.role == 'mahasiswa'
             )
         )
+        if gedung_id is not None:
+            query = query.filter(
+                db.or_(
+                    Presensi.gedung_id == gedung_id,
+                    Kamar.gedung_id == gedung_id
+                )
+            )
         if tipe_sesi:
             query = query.filter(Presensi.sesi == tipe_sesi)
 
@@ -166,9 +194,11 @@ class IzinRepository:
     """Data Access Object untuk tabel izin (operasi fasilitator)."""
 
     @staticmethod
-    def get_all(status: str = None, page: int = 1, per_page: int = 15):
-        """Ambil semua pengajuan izin, dengan filter status opsional."""
+    def get_all(status: str = None, page: int = 1, per_page: int = 15, gedung_id: int = None):
+        """Ambil semua pengajuan izin, dengan filter status dan gedung opsional."""
         query = Izin.query
+        if gedung_id is not None:
+            query = query.join(Izin.pemohon).filter(User.kamar_ref.has(Kamar.gedung_id == gedung_id))
         if status:
             query = query.filter(Izin.status == status)
         return query.order_by(Izin.created_at.desc()).paginate(

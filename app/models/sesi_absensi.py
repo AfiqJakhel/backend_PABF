@@ -15,7 +15,7 @@ class SesiAbsensi(db.Model):
     tipe_sesi = db.Column(db.String(20), nullable=False, default='malam')
     tanggal = db.Column(db.Date, nullable=False, default=date.today, index=True)
     waktu_mulai = db.Column(db.DateTime, nullable=False)
-    waktu_selesai = db.Column(db.DateTime, nullable=False)
+    waktu_selesai = db.Column(db.DateTime, nullable=True)
     # Status sesi: 'aktif', 'ditutup'
     status = db.Column(db.String(20), nullable=False, default='aktif')
     # ID fasilitator yang membuat sesi
@@ -62,10 +62,11 @@ class SesiAbsensi(db.Model):
     def is_aktif(self) -> bool:
         """Cek apakah sesi masih dalam rentang waktu aktif dan belum ditutup."""
         now = datetime.utcnow()
-        return (
-            self.status == 'aktif'
-            and self.waktu_mulai <= now <= self.waktu_selesai
-        )
+        if self.status != 'aktif':
+            return False
+        if self.waktu_selesai:
+            return self.waktu_mulai <= now <= self.waktu_selesai
+        return self.waktu_mulai <= now
 
     def to_dict(self) -> dict:
         return {
