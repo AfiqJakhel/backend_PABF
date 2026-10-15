@@ -48,20 +48,82 @@ class MahasiswaPresensiService:
         tanggal_hari_ini = date.today()
 
         requested_sesi = parsed.get("sesi")
-        if requested_sesi:
-            sesi_info = resolve_sesi_info(requested_sesi, target_date=tanggal_hari_ini, current_time=now)
-            if not sesi_info["is_aktif"]:
+        is_late_submission = False
+
+        if requested_sesi == "kegiatan":
+            from app.models.user import User
+            from app.models.sesi_absensi import SesiAbsensi
+            student = User.query.get(user_id)
+            fasil_id = None
+            student_gedung_nama = "gedung Anda"
+            if student and student.kamar_ref and student.kamar_ref.gedung:
+                fasil_id = student.kamar_ref.gedung.user_id
+                student_gedung_nama = student.kamar_ref.gedung.nama_gedung
+
+            sesi_kegiatan = None
+            if fasil_id:
+                sesi_kegiatan = SesiAbsensi.query.filter(
+                    SesiAbsensi.tipe_sesi == 'kegiatan',
+                    SesiAbsensi.tanggal == tanggal_hari_ini,
+                    SesiAbsensi.dibuat_oleh == fasil_id
+                ).order_by(SesiAbsensi.created_at.desc()).first()
+
+            if not sesi_kegiatan:
                 return None, {
-                    "message": (
-                        f"Sesi {sesi_info['nama_sesi']} sedang tidak aktif. "
-                        f"{sesi_info['pesan_status']} (Batas waktu: {sesi_info['jam_mulai']} - {sesi_info['jam_selesai']} WIB)"
-                    ),
-                    "code": "SESSION_NOT_ACTIVE",
+                    "message": f"Tidak dapat mengambil presensi. Tidak ada kegiatan yang dijadwalkan oleh Fasilitator di {student_gedung_nama} hari ini.",
+                    "code": "NO_ACTIVE_SESSION",
                     "location_valid": False,
                 }
+
+            if sesi_kegiatan.status == 'ditutup':
+                return None, {
+                    "message": f"Kegiatan '{sesi_kegiatan.nama_sesi}' telah ditutup oleh Fasilitator.",
+                    "code": "SESSION_CLOSED",
+                    "location_valid": False,
+                }
+
+            if now < sesi_kegiatan.waktu_mulai:
+                jam_mulai_str = sesi_kegiatan.waktu_mulai.strftime("%H:%M")
+                return None, {
+                    "message": f"Kegiatan '{sesi_kegiatan.nama_sesi}' belum dimulai. Presensi dibuka pukul {jam_mulai_str} WIB.",
+                    "code": "SESSION_NOT_STARTED",
+                    "location_valid": False,
+                }
+
+            if sesi_kegiatan.waktu_selesai and now > sesi_kegiatan.waktu_selesai:
+                jam_selesai_str = sesi_kegiatan.waktu_selesai.strftime("%H:%M")
+                return None, {
+                    "message": f"Kegiatan '{sesi_kegiatan.nama_sesi}' telah berakhir pada pukul {jam_selesai_str} WIB.",
+                    "code": "SESSION_ENDED",
+                    "location_valid": False,
+                }
+
+            tipe_sesi = "kegiatan"
+            sesi_info = {
+                "tipe_sesi": "kegiatan",
+                "nama_sesi": sesi_kegiatan.nama_sesi,
+                "waktu_mulai_dt": sesi_kegiatan.waktu_mulai,
+                "waktu_selesai_dt": sesi_kegiatan.waktu_selesai,
+                "is_aktif": True,
+            }
+        elif requested_sesi:
+            sesi_info = resolve_sesi_info(requested_sesi, target_date=tanggal_hari_ini, current_time=now)
+            if not sesi_info["is_aktif"]:
+                # Jika sesi telah lewat batas waktu pada hari ini, izinkan presensi susulan dengan status terlambat
+                if sesi_info.get("is_ended") and not sesi_info.get("is_forced_closed"):
+                    is_late_submission = True
+                else:
+                    return None, {
+                        "message": (
+                            f"Sesi {sesi_info['nama_sesi']} sedang tidak aktif. "
+                            f"{sesi_info['pesan_status']} (Batas waktu: {sesi_info['jam_mulai']} - {sesi_info['jam_selesai']} WIB)"
+                        ),
+                        "code": "SESSION_NOT_ACTIVE",
+                        "location_valid": False,
+                    }
             tipe_sesi = requested_sesi
         else:
-            # Fallback jika client tidak mengirim field sesi: cari sesi yang aktif saat ini
+            # Fallback jika client tidak mengirim field sesi: cari sesi yang aktif atau sesi lewat batas hari ini
             subuh_info = resolve_sesi_info("subuh", target_date=tanggal_hari_ini, current_time=now)
             malam_info = resolve_sesi_info("malam", target_date=tanggal_hari_ini, current_time=now)
             if subuh_info["is_aktif"]:
@@ -70,6 +132,14 @@ class MahasiswaPresensiService:
             elif malam_info["is_aktif"]:
                 sesi_info = malam_info
                 tipe_sesi = "malam"
+            elif subuh_info.get("is_ended") and not subuh_info.get("is_forced_closed") and not MahasiswaPresensiRepository.get_by_user_tanggal_sesi(user_id, tanggal_hari_ini, "subuh"):
+                sesi_info = subuh_info
+                tipe_sesi = "subuh"
+                is_late_submission = True
+            elif malam_info.get("is_ended") and not malam_info.get("is_forced_closed") and not MahasiswaPresensiRepository.get_by_user_tanggal_sesi(user_id, tanggal_hari_ini, "malam"):
+                sesi_info = malam_info
+                tipe_sesi = "malam"
+                is_late_submission = True
             else:
                 return None, {
                     "message": (
@@ -111,7 +181,16 @@ class MahasiswaPresensiService:
         location_valid = True if area else False
 
         keterangan_items = []
-        if user_keterangan:
+        if tipe_sesi == "kegiatan":
+            act_name = sesi_info.get("nama_sesi", "Kegiatan Asrama")
+            if user_keterangan:
+                if act_name.lower() in user_keterangan.lower():
+                    keterangan_items.append(user_keterangan)
+                else:
+                    keterangan_items.append(f"Kegiatan: {act_name} | {user_keterangan}")
+            else:
+                keterangan_items.append(f"Kegiatan: {act_name}")
+        elif user_keterangan:
             keterangan_items.append(user_keterangan)
 
         if not area:
@@ -137,10 +216,22 @@ class MahasiswaPresensiService:
         # ── 5. Tentukan status absensi ───────────────────────────────────────
         now = datetime.now()
         status = "hadir"
-        # Jika sesi sudah lewat 15 menit dari waktu mulai, tandai terlambat
         waktu_mulai_dt = sesi_info.get("waktu_mulai_dt")
-        if waktu_mulai_dt and (now - waktu_mulai_dt).total_seconds() > 15 * 60:
+        waktu_selesai_dt = sesi_info.get("waktu_selesai_dt")
+
+        # Jika sesi lewat batas waktu selesai atau lewat toleransi 15 menit (untuk sesi harian wajib), tandai terlambat
+        is_past_deadline = is_late_submission or (waktu_selesai_dt and now > waktu_selesai_dt)
+        is_past_start_tolerance = (
+            tipe_sesi != "kegiatan"
+            and waktu_mulai_dt
+            and (now - waktu_mulai_dt).total_seconds() > 15 * 60
+        )
+
+        if is_past_deadline or is_past_start_tolerance:
             status = "terlambat"
+            if not any("terlambat" in k.lower() for k in keterangan_items):
+                keterangan_items.append("Presensi terlambat (melewati batas sesi)")
+                final_keterangan = " | ".join(keterangan_items)
 
         # ── 6. Simpan record presensi ────────────────────────────────────────
         try:

@@ -35,7 +35,7 @@ def seed_database():
     """Buat tabel dan isi data relasional awal untuk pengujian."""
     from app import create_app
     from app.core.extensions import db
-    from app.models import User, Gedung, Kamar, Presensi, Izin
+    from app.models import User, Gedung, Kamar, Presensi, Izin, SesiAbsensi
 
     app = create_app()
     with app.app_context():
@@ -330,6 +330,78 @@ def seed_database():
             )
             db.session.add(izin_sample)
             print("[OK] Sample Izin sakit disetujui ditambahkan.")
+
+        # 8. Seed Sesi Jadwal Kegiatan Hari Ini
+        sesi_kegiatan_today = SesiAbsensi.query.filter_by(tanggal=hari_ini, tipe_sesi='kegiatan').first()
+        if not sesi_kegiatan_today:
+            sesi_kegiatan_today = SesiAbsensi(
+                nama_sesi='Kajian Akbar Asrama & Doa Bersama',
+                tipe_sesi='kegiatan',
+                tanggal=hari_ini,
+                waktu_mulai=datetime.combine(hari_ini, time(8, 0, 0)),
+                waktu_selesai=datetime.combine(hari_ini, time(22, 0, 0)),
+                status='aktif',
+                dibuat_oleh=fasil_a.id,
+                keterangan='Kegiatan rutin mingguan pembinaan karakter dan silaturahmi penghuni asrama.'
+            )
+            db.session.add(sesi_kegiatan_today)
+            print(f"[OK] Sesi Kegiatan Hari Ini '{sesi_kegiatan_today.nama_sesi}' dibuat.")
+
+        # 9. Seed Dummy Presensi Kegiatan Mahasiswa (untuk melihat hasil tabel riwayat)
+        kegiatan_dummies = [
+            {
+                "tanggal": date(hari_ini.year, hari_ini.month, 4) if hari_ini.day >= 4 else hari_ini,
+                "jam": 8,
+                "menit": 30,
+                "keterangan": "Gotong Royong & Kerja Bakti Lingkungan Asrama",
+                "status": "hadir"
+            },
+            {
+                "tanggal": date(hari_ini.year, hari_ini.month, 8) if hari_ini.day >= 8 else hari_ini,
+                "jam": 20,
+                "menit": 15,
+                "keterangan": "Kajian Rutin & Pembinaan Karakter",
+                "status": "hadir"
+            },
+            {
+                "tanggal": date(hari_ini.year, hari_ini.month, 11) if hari_ini.day >= 11 else hari_ini,
+                "jam": 7,
+                "menit": 10,
+                "keterangan": "Senam Pagi Bersama & Cek Kebugaran",
+                "status": "hadir"
+            },
+            {
+                "tanggal": date(hari_ini.year, hari_ini.month, 14) if hari_ini.day >= 14 else hari_ini,
+                "jam": 14,
+                "menit": 45,
+                "keterangan": "Seminar Kepemimpinan & Soft Skills",
+                "status": "hadir"
+            },
+        ]
+
+        for item in kegiatan_dummies:
+            p_keg = Presensi.query.filter_by(
+                user_id=mhs_a1.id,
+                tanggal=item["tanggal"],
+                sesi='kegiatan'
+            ).first()
+            if not p_keg:
+                p_keg = Presensi(
+                    user_id=mhs_a1.id,
+                    nim=mhs_a1.nim,
+                    tanggal=item["tanggal"],
+                    waktu=datetime.combine(item["tanggal"], time(item["jam"], item["menit"])),
+                    sesi='kegiatan',
+                    latitude=-0.9145,
+                    longitude=100.4607,
+                    accuracy=10.0,
+                    area_absensi_id=area_a.id,
+                    gedung_id=gedung_a.id,
+                    status=item["status"],
+                    keterangan=item["keterangan"]
+                )
+                db.session.add(p_keg)
+                print(f"[OK] Dummy Presensi Kegiatan ({item['keterangan']}) tanggal {item['tanggal']} dibuat.")
 
         db.session.commit()
 

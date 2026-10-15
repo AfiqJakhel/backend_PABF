@@ -94,7 +94,7 @@ def validate_submit_absensi(form_data, files) -> tuple[list, dict]:
     if sesi_raw:
         sesi_clean = str(sesi_raw).strip().lower()
         if sesi_clean not in {"subuh", "malam", "kegiatan"}:
-            errors.append("'sesi' harus salah satu dari: subuh, malam.")
+            errors.append("'sesi' harus salah satu dari: subuh, malam, atau kegiatan.")
         else:
             parsed["sesi"] = sesi_clean
     else:

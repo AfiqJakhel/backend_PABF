@@ -25,6 +25,14 @@ DEFAULT_SESI_SCHEDULE = {
         "jam_mulai_str": "19:00",
         "jam_selesai_str": "21:00",
     },
+    "kegiatan": {
+        "tipe_sesi": "kegiatan",
+        "nama_sesi": "Kegiatan Asrama",
+        "jam_mulai_time": time(5, 0, 0),
+        "jam_selesai_time": time(23, 0, 0),
+        "jam_mulai_str": "05:00",
+        "jam_selesai_str": "23:00",
+    },
 }
 
 

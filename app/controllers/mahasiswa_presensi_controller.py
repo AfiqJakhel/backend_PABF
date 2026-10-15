@@ -192,11 +192,87 @@ def get_sesi_hari_ini():
     today_records = Presensi.query.filter_by(user_id=user_id, tanggal=tanggal_hari_ini).all()
     record_map = {r.sesi: r for r in today_records}
 
-    sesi_keys = ["subuh", "malam"]
+    user = User.query.get(user_id)
+    student_gedung_id = None
+    student_gedung_nama = None
+    fasil_id = None
+    if user and user.kamar_ref and user.kamar_ref.gedung:
+        student_gedung_id = user.kamar_ref.gedung_id
+        student_gedung_nama = user.kamar_ref.gedung.nama_gedung
+        fasil_id = user.kamar_ref.gedung.user_id
+
+    from app.models.sesi_absensi import SesiAbsensi
+    sesi_keys = ["subuh", "malam", "kegiatan"]
     result_list = []
 
     for key in sesi_keys:
-        info = resolve_sesi_info(key, target_date=tanggal_hari_ini, current_time=now)
+        if key == "kegiatan":
+            # Cari sesi kegiatan yang dijadwalkan oleh Fasilitator gedung mahasiswa hari ini
+            query = SesiAbsensi.query.filter(
+                SesiAbsensi.tipe_sesi == 'kegiatan',
+                SesiAbsensi.tanggal == tanggal_hari_ini
+            )
+            if fasil_id:
+                query = query.filter(SesiAbsensi.dibuat_oleh == fasil_id)
+
+            kegiatan_record = query.order_by(SesiAbsensi.created_at.desc()).first()
+
+            if kegiatan_record:
+                waktu_mulai = kegiatan_record.waktu_mulai
+                waktu_selesai = kegiatan_record.waktu_selesai
+                is_forced_closed = (kegiatan_record.status == 'ditutup')
+                jam_mulai_str = waktu_mulai.strftime("%H:%M") if waktu_mulai else "08:00"
+                jam_selesai_str = waktu_selesai.strftime("%H:%M") if waktu_selesai else "22:00"
+
+                if is_forced_closed:
+                    is_aktif = False
+                    status_sesi = "tidak_aktif"
+                    pesan_status = "Kegiatan telah ditutup oleh Fasilitator gedung."
+                elif now < waktu_mulai:
+                    is_aktif = False
+                    status_sesi = "tidak_aktif"
+                    pesan_status = f"Kegiatan belum dimulai. Dibuka pukul {jam_mulai_str} WIB."
+                elif waktu_selesai and now > waktu_selesai:
+                    is_aktif = False
+                    status_sesi = "tidak_aktif"
+                    pesan_status = f"Kegiatan telah berakhir pada pukul {jam_selesai_str} WIB."
+                else:
+                    is_aktif = True
+                    status_sesi = "aktif"
+                    pesan_status = f"Kegiatan sedang aktif berlangsung di {student_gedung_nama or 'gedung Anda'}."
+
+                info = {
+                    "tipe_sesi": "kegiatan",
+                    "nama_sesi": kegiatan_record.nama_sesi,
+                    "tanggal": tanggal_hari_ini.isoformat(),
+                    "waktu_mulai": waktu_mulai.isoformat() if waktu_mulai else None,
+                    "waktu_selesai": waktu_selesai.isoformat() if waktu_selesai else None,
+                    "jam_mulai": jam_mulai_str,
+                    "jam_selesai": jam_selesai_str,
+                    "is_aktif": is_aktif,
+                    "status_sesi": status_sesi,
+                    "pesan_status": pesan_status,
+                    "keterangan": kegiatan_record.keterangan,
+                    "gedung_nama": student_gedung_nama,
+                }
+            else:
+                info = {
+                    "tipe_sesi": "kegiatan",
+                    "nama_sesi": "Kegiatan Gedung",
+                    "tanggal": tanggal_hari_ini.isoformat(),
+                    "waktu_mulai": None,
+                    "waktu_selesai": None,
+                    "jam_mulai": "-",
+                    "jam_selesai": "-",
+                    "is_aktif": False,
+                    "status_sesi": "tidak_aktif",
+                    "pesan_status": f"Tidak ada kegiatan yang dijadwalkan oleh Fasilitator di {student_gedung_nama or 'gedung Anda'} hari ini.",
+                    "keterangan": None,
+                    "gedung_nama": student_gedung_nama,
+                }
+        else:
+            info = resolve_sesi_info(key, target_date=tanggal_hari_ini, current_time=now)
+
         presensi = record_map.get(key)
         sudah_absen = presensi is not None
 
@@ -211,6 +287,8 @@ def get_sesi_hari_ini():
             "is_aktif": info["is_aktif"],
             "status_sesi": info["status_sesi"],
             "pesan_status": info["pesan_status"],
+            "keterangan": info.get("keterangan"),
+            "gedung_nama": info.get("gedung_nama"),
             "sudah_absen": sudah_absen,
             "presensi_info": {
                 "id": presensi.id,
@@ -240,17 +318,139 @@ def get_sesi_aktif():
     Mendapatkan daftar sesi absensi yang sedang aktif untuk mahasiswa.
     """
     from datetime import datetime
+    user_id = int(get_jwt_identity())
     tanggal_hari_ini = date.today()
     now = datetime.now()
     from app.services.sesi_manager import resolve_sesi_info
+    from app.models.sesi_absensi import SesiAbsensi
+
+    user = User.query.get(user_id)
+    fasil_id = None
+    if user and user.kamar_ref and user.kamar_ref.gedung:
+        fasil_id = user.kamar_ref.gedung.user_id
+
     aktif_list = []
-    for key in ["subuh", "malam"]:
-        info = resolve_sesi_info(key, target_date=tanggal_hari_ini, current_time=now)
-        if info["is_aktif"]:
-            aktif_list.append(info)
+    for key in ["subuh", "malam", "kegiatan"]:
+        if key == "kegiatan":
+            query = SesiAbsensi.query.filter(
+                SesiAbsensi.tipe_sesi == 'kegiatan',
+                SesiAbsensi.tanggal == tanggal_hari_ini
+            )
+            if fasil_id:
+                query = query.filter(SesiAbsensi.dibuat_oleh == fasil_id)
+            kegiatan_record = query.order_by(SesiAbsensi.created_at.desc()).first()
+            if kegiatan_record and kegiatan_record.is_aktif:
+                aktif_list.append(kegiatan_record.to_dict())
+        else:
+            info = resolve_sesi_info(key, target_date=tanggal_hari_ini, current_time=now)
+            if info["is_aktif"]:
+                aktif_list.append(info)
+
     return jsonify({
         "success": True,
         "message": "Sesi aktif berhasil diambil.",
         "data": aktif_list
+    }), 200
+
+
+def get_kegiatan_terjadwal():
+    """
+    GET /api/mahasiswa/presensi/kegiatan
+    Mengambil daftar kegiatan asrama yang dijadwalkan oleh Fasilitator untuk gedung mahasiswa.
+    """
+    from datetime import datetime
+    user_id = int(get_jwt_identity())
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"success": False, "message": "User tidak ditemukan.", "data": None}), 404
+
+    student_gedung_nama = None
+    fasil_id = None
+    if user.kamar_ref and user.kamar_ref.gedung:
+        student_gedung_nama = user.kamar_ref.gedung.nama_gedung
+        fasil_id = user.kamar_ref.gedung.user_id
+
+    from app.models.sesi_absensi import SesiAbsensi
+    from app.models.presensi import Presensi
+
+    # Ambil kegiatan asrama yang dibuat oleh fasilitator gedung (atau semua kegiatan jika belum ditugaskan gedung)
+    query = SesiAbsensi.query.filter(SesiAbsensi.tipe_sesi == 'kegiatan')
+    if fasil_id:
+        query = query.filter(SesiAbsensi.dibuat_oleh == fasil_id)
+
+    # Ambil kegiatan (urutkan tanggal terbaru / mendatang)
+    kegiatan_records = query.order_by(SesiAbsensi.tanggal.desc(), SesiAbsensi.waktu_mulai.desc()).limit(20).all()
+
+    # Ambil catatan presensi kegiatan yang sudah dilakukan mahasiswa
+    presensi_kegiatan = Presensi.query.filter_by(user_id=user_id, sesi='kegiatan').all()
+    presensi_date_map = {p.tanggal: p for p in presensi_kegiatan}
+
+    now = datetime.now()
+    items = []
+    for k in kegiatan_records:
+        k_waktu_mulai = k.waktu_mulai
+        k_waktu_selesai = k.waktu_selesai
+
+        jam_mulai_str = k_waktu_mulai.strftime("%H:%M") if k_waktu_mulai else "-"
+        jam_selesai_str = k_waktu_selesai.strftime("%H:%M") if k_waktu_selesai else None
+        jam_formatted = f"{jam_mulai_str} - {jam_selesai_str} WIB" if jam_selesai_str else f"{jam_mulai_str} WIB"
+
+        presensi_item = presensi_date_map.get(k.tanggal)
+        sudah_absen = presensi_item is not None
+
+        # Tentukan keaktifan sesi berdasarkan status & waktu lokal
+        is_currently_active = False
+        if k.status == 'aktif' and k_waktu_mulai:
+            if k_waktu_selesai:
+                is_currently_active = (k_waktu_mulai <= now <= k_waktu_selesai)
+            else:
+                is_currently_active = (k_waktu_mulai <= now)
+
+        if sudah_absen:
+            status = "sudah_absen"
+            status_label = "SUDAH ABSEN"
+        elif k.status == 'ditutup':
+            status = "selesai"
+            status_label = "DITUTUP"
+        elif k_waktu_selesai and now > k_waktu_selesai:
+            status = "selesai"
+            status_label = "SELESAI"
+        elif is_currently_active:
+            status = "aktif"
+            status_label = "SEDANG AKTIF"
+        elif k_waktu_mulai and now < k_waktu_mulai:
+            status = "akan_datang"
+            status_label = "AKAN DATANG"
+        else:
+            status = "selesai"
+            status_label = "SELESAI"
+
+        items.append({
+            "id": k.id,
+            "nama_kegiatan": k.nama_sesi,
+            "tanggal": k.tanggal.isoformat() if k.tanggal else None,
+            "waktu_mulai": k_waktu_mulai.isoformat() if k_waktu_mulai else None,
+            "waktu_selesai": k_waktu_selesai.isoformat() if k_waktu_selesai else None,
+            "jam_formatted": jam_formatted,
+            "jam_mulai": jam_mulai_str,
+            "jam_selesai": jam_selesai_str,
+            "lokasi": student_gedung_nama or "Asrama UNAND",
+            "keterangan": k.keterangan or "-",
+            "nama_fasilitator": k.fasilitator.nama if k.fasilitator else "Fasilitator Asrama",
+            "status": status,
+            "status_label": status_label,
+            "is_aktif": is_currently_active,
+            "sudah_absen": sudah_absen,
+            "can_absen": bool(is_currently_active and not sudah_absen and k.status != 'ditutup')
+        })
+
+    return jsonify({
+        "success": True,
+        "message": "Daftar kegiatan asrama terjadwal berhasil diambil.",
+        "data": {
+            "gedung_nama": student_gedung_nama,
+            "total": len(items),
+            "items": items
+        }
     }), 200
 
