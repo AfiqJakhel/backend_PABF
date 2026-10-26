@@ -30,7 +30,9 @@ class Config:
 
     # JWT — nilai aktual diatur di .env
     JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'change-me-in-production')
-    JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=8)
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(
+        minutes=int(os.getenv('JWT_ACCESS_TOKEN_EXPIRES_MINUTES', '480'))
+    )
 
     # Uploads
     UPLOAD_FOLDER = os.path.join(
@@ -47,6 +49,22 @@ class Config:
     # Jika accuracy > nilai ini, absensi ditolak.
     MAX_GPS_ACCURACY_METERS = float(os.getenv('MAX_GPS_ACCURACY_METERS', '50'))
 
+    # ─── Perizinan ──────────────────────────────────────────────────────────
+    # Dokumen izin disimpan di folder PRIVAT (bukan di bawah UPLOAD_FOLDER yang
+    # disajikan publik lewat /uploads). Hanya bisa diakses via endpoint ber-JWT.
+    IZIN_UPLOAD_FOLDER = os.path.join(
+        os.path.abspath(os.path.dirname(__file__)),
+        os.getenv('IZIN_UPLOAD_FOLDER', os.path.join('private_uploads', 'izin'))
+    )
+    IZIN_MAX_FILE_BYTES = int(os.getenv('IZIN_MAX_FILE_BYTES', str(5 * 1024 * 1024)))
+    IZIN_MAX_DURASI_HARI = int(os.getenv('IZIN_MAX_DURASI_HARI', '14'))
+    IZIN_MAKS_MUNDUR_HARI = int(os.getenv('IZIN_MAKS_MUNDUR_HARI', '3'))
+    IZIN_MAKS_MAJU_HARI = int(os.getenv('IZIN_MAKS_MAJU_HARI', '60'))
+
+    # Rate limit login: maksimal percobaan gagal per jendela waktu (per IP+NIM)
+    LOGIN_RATE_LIMIT_ATTEMPTS = int(os.getenv('LOGIN_RATE_LIMIT_ATTEMPTS', '5'))
+    LOGIN_RATE_LIMIT_WINDOW_SECONDS = int(os.getenv('LOGIN_RATE_LIMIT_WINDOW_SECONDS', '900'))
+
 
 class DevelopmentConfig(Config):
     DEBUG = True
@@ -54,3 +72,11 @@ class DevelopmentConfig(Config):
 
 class ProductionConfig(Config):
     DEBUG = False
+
+
+class TestingConfig(Config):
+    """Konfigurasi pytest: SQLite in-memory, tidak menyentuh MySQL dev."""
+    TESTING = True
+    SQLALCHEMY_DATABASE_URI = 'sqlite://'
+    JWT_SECRET_KEY = 'test-only-secret-key-not-for-production-use-32b'
+    SECRET_KEY = 'test-only-secret'

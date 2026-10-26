@@ -4,10 +4,11 @@ from app.core.extensions import db
 
 class SesiAbsensi(db.Model):
     """
-    Model untuk menyimpan data sesi absensi yang dibuat oleh Fasilitator.
+    Model untuk menyimpan data sesi absensi / kegiatan yang dibuat oleh Fasilitator.
     Satu sesi bisa berupa sesi pagi (subuh), malam, atau kegiatan tertentu.
+    Tabel database: `kegiatan`.
     """
-    __tablename__ = 'sesi_absensi'
+    __tablename__ = 'kegiatan'
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     nama_sesi = db.Column(db.String(100), nullable=False)
@@ -86,4 +87,8 @@ class SesiAbsensi(db.Model):
         }
 
     def __repr__(self):
-        return f"<SesiAbsensi {self.nama_sesi} - {self.tanggal} [{self.status}]>"
+        return f"<Kegiatan {self.nama_sesi} - {self.tanggal} [{self.status}]>"
+
+
+# Alias Kegiatan untuk kompatibilitas dan kejelasan nama domain
+Kegiatan = SesiAbsensi

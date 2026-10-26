@@ -10,6 +10,7 @@ IDOR Protection: Mahasiswa di luar gedung binaan akan ditolak dengan HTTP 403 Fo
 
 import io
 import csv
+import random
 from flask import request, jsonify, Response
 from app.core.extensions import db
 from app.models.user import User
@@ -58,7 +59,7 @@ def get_mahasiswa_fasil():
     GET /api/fasil/mahasiswa
     Mengambil seluruh mahasiswa yang menghuni kamar di gedung binaan fasilitator.
     Query params:
-        search : str (opsional, filter nama atau NIM)
+        search : str (opsional, filter nama, nama panggilan, NIM, email, asal)
         kamar  : str (opsional, filter nomor kamar)
     """
     gedung, err_resp, code = resolve_fasil_building()
@@ -79,7 +80,13 @@ def get_mahasiswa_fasil():
     if search:
         search_like = f"%{search}%"
         query = query.filter(
-            db.or_(User.nama.ilike(search_like), User.nim.ilike(search_like))
+            db.or_(
+                User.nama.ilike(search_like),
+                User.nim.ilike(search_like),
+                User.nama_panggilan.ilike(search_like),
+                User.asal.ilike(search_like),
+                User.email.ilike(search_like)
+            )
         )
 
     if kamar_filter and kamar_filter != "all":
@@ -93,6 +100,7 @@ def get_mahasiswa_fasil():
             "id": mhs.id,
             "nim": mhs.nim,
             "nama": mhs.nama,
+            "nama_panggilan": mhs.nama_panggilan or "-",
             "email": mhs.email or "-",
             "asal": mhs.asal or "-",
             "jekel": mhs.jekel or "-",
@@ -115,20 +123,57 @@ def get_mahasiswa_fasil():
     }), 200
 
 
+def assign_room_in_building(gedung_id: int, room_occupancy_tracker: dict = None) -> Kamar:
+    """
+    Menemukan atau mengalokasikan kamar secara otomatis/acak di dalam gedung.
+    Memilih kamar dengan jumlah penghuni tersedikit (dengan tie-breaker acak).
+    """
+    kamar_list = Kamar.query.filter_by(gedung_id=gedung_id).order_by(Kamar.lantai, Kamar.nomor_kamar).all()
+    if not kamar_list:
+        default_rooms = [
+            ('101', 1), ('102', 1), ('103', 1), ('104', 1),
+            ('201', 2), ('202', 2), ('203', 2), ('204', 2),
+            ('301', 3), ('302', 3), ('303', 3), ('304', 3),
+        ]
+        for n_k, lt in default_rooms:
+            k = Kamar(gedung_id=gedung_id, nomor_kamar=n_k, lantai=lt)
+            db.session.add(k)
+        db.session.flush()
+        kamar_list = Kamar.query.filter_by(gedung_id=gedung_id).order_by(Kamar.lantai, Kamar.nomor_kamar).all()
+
+    if room_occupancy_tracker is not None:
+        min_occ = min(room_occupancy_tracker.get(k.id, 0) for k in kamar_list)
+        candidates = [k for k in kamar_list if room_occupancy_tracker.get(k.id, 0) == min_occ]
+        chosen = random.choice(candidates)
+        room_occupancy_tracker[chosen.id] = room_occupancy_tracker.get(chosen.id, 0) + 1
+        return chosen
+    else:
+        kamar_counts = [
+            (k, k.penghuni.count() if hasattr(k.penghuni, 'count') else len(k.penghuni))
+            for k in kamar_list
+        ]
+        min_count = min(count for _, count in kamar_counts)
+        candidates = [k for k, count in kamar_counts if count == min_count]
+        return random.choice(candidates)
+
+
 def tambah_mahasiswa_fasil():
     """
     POST /api/fasil/mahasiswa
     Menambahkan mahasiswa baru ke kamar pada gedung binaan fasilitator.
+    Jika kamar_id/nomor_kamar tidak diisi, kamar dan lantai dialokasikan otomatis/acak oleh sistem.
+    Password awal otomatis menggunakan NIM jika tidak diisi.
     Body JSON:
-        nim          : str (wajib)
-        nama         : str (wajib)
-        email        : str (opsional)
-        kamar_id     : int (opsional jika nomor_kamar diisi)
-        nomor_kamar  : str (opsional jika kamar_id diisi)
-        lantai       : int (opsional, default 1)
-        asal         : str (opsional)
-        jekel        : str ('L' | 'P', opsional)
-        password     : str (opsional, default 'password123')
+        nim             : str (wajib)
+        nama            : str (wajib, Nama Panjang)
+        nama_panggilan  : str (opsional, Nama Panggilan)
+        email           : str (opsional)
+        asal            : str (opsional, Asal Daerah)
+        kamar_id        : int (opsional)
+        nomor_kamar     : str (opsional)
+        lantai          : int (opsional, default 1)
+        jekel           : str ('L' | 'P', opsional)
+        password        : str (opsional, default adalah NIM)
     """
     gedung, err_resp, code = resolve_fasil_building()
     if err_resp:
@@ -137,13 +182,15 @@ def tambah_mahasiswa_fasil():
     body = request.get_json(silent=True) or {}
     nim = str(body.get("nim", "")).strip()
     nama = str(body.get("nama", "")).strip()
+    nama_panggilan = str(body.get("nama_panggilan", "")).strip() or None
     kamar_id = body.get("kamar_id")
     nomor_kamar = str(body.get("nomor_kamar", "")).strip()
     lantai = int(body.get("lantai") or 1)
     email = str(body.get("email", "")).strip() or None
     asal = str(body.get("asal", "")).strip() or None
     jekel = str(body.get("jekel", "")).strip() or None
-    password = str(body.get("password", "")).strip() or "password123"
+    # Password awal berasal dari NIM jika tidak ditentukan
+    password = str(body.get("password", "")).strip() or nim
 
     if not nim or not nama:
         return jsonify({
@@ -177,21 +224,18 @@ def tambah_mahasiswa_fasil():
     elif nomor_kamar:
         target_kamar = Kamar.query.filter_by(gedung_id=gedung.id, nomor_kamar=nomor_kamar).first()
         if not target_kamar:
-            # Auto buat kamar di gedung ini jika belum ada
             target_kamar = Kamar(gedung_id=gedung.id, nomor_kamar=nomor_kamar, lantai=lantai)
             db.session.add(target_kamar)
             db.session.flush()
     else:
-        return jsonify({
-            "success": False,
-            "message": "Kamar wajib dipilih atau nomor kamar wajib diisi.",
-            "data": None
-        }), 400
+        # Alokasi otomatis/acak oleh sistem
+        target_kamar = assign_room_in_building(gedung.id)
 
     # Buat User Mahasiswa
     new_mhs = User(
         nim=nim,
         nama=nama,
+        nama_panggilan=nama_panggilan,
         role='mahasiswa',
         kamar_id=target_kamar.id,
         email=email,
@@ -210,6 +254,7 @@ def tambah_mahasiswa_fasil():
             "id": new_mhs.id,
             "nim": new_mhs.nim,
             "nama": new_mhs.nama,
+            "nama_panggilan": new_mhs.nama_panggilan,
             "kamar_id": target_kamar.id,
             "nomor_kamar": target_kamar.nomor_kamar,
             "lantai": target_kamar.lantai,
@@ -235,6 +280,7 @@ def update_mahasiswa_fasil(student_id: int):
 
     body = request.get_json(silent=True) or {}
     nama = body.get("nama")
+    nama_panggilan = body.get("nama_panggilan")
     email = body.get("email")
     asal = body.get("asal")
     jekel = body.get("jekel")
@@ -243,6 +289,8 @@ def update_mahasiswa_fasil(student_id: int):
 
     if nama is not None:
         student.nama = str(nama).strip()
+    if nama_panggilan is not None:
+        student.nama_panggilan = str(nama_panggilan).strip() or None
     if email is not None:
         email_clean = str(email).strip() or None
         if email_clean and email_clean != student.email:
@@ -278,6 +326,7 @@ def update_mahasiswa_fasil(student_id: int):
             "id": student.id,
             "nim": student.nim,
             "nama": student.nama,
+            "nama_panggilan": student.nama_panggilan,
             "kamar_id": student.kamar_id,
             "nomor_kamar": student.kamar_ref.nomor_kamar if student.kamar_ref else "-",
             "nama_gedung": gedung.nama_gedung
@@ -317,6 +366,9 @@ def download_template_csv():
     """
     GET /api/fasil/mahasiswa/template-csv
     Mengunduh berkas template CSV untuk import mahasiswa ke gedung binaan.
+    Hanya memuat kolom: NIM, Nama Panjang, Nama Panggilan, Email, Asal Daerah.
+    Nomor kamar dan lantai dialokasikan otomatis/acak oleh sistem.
+    Password awal mahasiswa otomatis berasal dari NIM.
     """
     gedung, err_resp, code = resolve_fasil_building()
     if err_resp:
@@ -324,11 +376,11 @@ def download_template_csv():
 
     output = io.StringIO()
     writer = csv.writer(output)
-    # Header
-    writer.writerow(["nim", "nama", "email", "nomor_kamar", "lantai", "jekel", "asal", "password"])
+    # Header minimalis sesuai instruksi user
+    writer.writerow(["NIM", "Nama Panjang", "Nama Panggilan", "Email", "Asal Daerah"])
     # Contoh baris
-    writer.writerow(["2211529901", "Contoh Mahasiswa 1", "mhs1@unand.ac.id", "101", "1", "L", "Padang", "password123"])
-    writer.writerow(["2211529902", "Contoh Mahasiswa 2", "mhs2@unand.ac.id", "102", "1", "P", "Bukittinggi", "password123"])
+    writer.writerow(["2211529901", "Muhammad Afiq Pratama", "Afiq", "afiq@unand.ac.id", "Padang"])
+    writer.writerow(["2211529902", "Siti Nurhaliza Putri", "Siti", "siti@unand.ac.id", "Bukittinggi"])
 
     csv_data = output.getvalue()
     filename = f"template_import_mahasiswa_{gedung.nama_gedung.replace(' ', '_').lower()}.csv"
@@ -345,7 +397,9 @@ def import_mahasiswa_csv():
     POST /api/fasil/mahasiswa/import-csv
     Mengimpor data mahasiswa dari CSV secara massal.
     Semua mahasiswa yang diimpor DIKUNCI OTOMATIS ke gedung binaan fasilitator!
-    Kolom building_id atau gedung_id apapun di CSV akan DIABAIKAN untuk mencegah spoofing.
+    Kolom template cukup: NIM, Nama Panjang, Nama Panggilan, Email, Asal Daerah.
+    Nomor kamar dan lantai diatur secara acak/otomatis oleh sistem,
+    dan password awal otomatis berasal dari NIM masing-masing mahasiswa.
     """
     gedung, err_resp, code = resolve_fasil_building()
     if err_resp:
@@ -383,17 +437,60 @@ def import_mahasiswa_csv():
             "data": None
         }), 400
 
-    # Normalisasi header
-    normalized_headers = {h.strip().lower(): h for h in reader.fieldnames if h}
-    if 'nim' not in normalized_headers or 'nama' not in normalized_headers:
+    # Normalisasi header fleksibel: lowercase, hilangkan spasi dan underscore
+    def normalize_header(h: str) -> str:
+        return h.strip().lower().replace(" ", "").replace("_", "")
+
+    header_map = {}
+    for raw_h in reader.fieldnames:
+        if not raw_h:
+            continue
+        norm = normalize_header(raw_h)
+        if norm in ("nim", "nomorindukmahasiswa"):
+            header_map["nim"] = raw_h
+        elif norm in ("namapanjang", "namalengkap", "nama"):
+            header_map["nama"] = raw_h
+        elif norm in ("namapanggilan", "panggilan", "nickname"):
+            header_map["nama_panggilan"] = raw_h
+        elif norm in ("email", "surel"):
+            header_map["email"] = raw_h
+        elif norm in ("asaldaerah", "asal", "daerah", "kotasal"):
+            header_map["asal"] = raw_h
+        elif norm in ("nomorkamar", "kamar", "nokamar"):
+            header_map["nomor_kamar"] = raw_h
+        elif norm in ("lantai",):
+            header_map["lantai"] = raw_h
+        elif norm in ("jeniskelamin", "jekel", "gender"):
+            header_map["jekel"] = raw_h
+        elif norm in ("password", "katasandi"):
+            header_map["password"] = raw_h
+
+    if "nim" not in header_map or "nama" not in header_map:
         return jsonify({
             "success": False,
-            "message": "Header CSV wajib memiliki kolom 'nim' dan 'nama'.",
+            "message": "Header CSV wajib memiliki kolom 'NIM' dan 'Nama Panjang' (atau 'Nama').",
             "data": None
         }), 400
 
-    # Cache kamar yang ada di gedung ini untuk efisiensi
-    kamar_map = {k.nomor_kamar: k for k in Kamar.query.filter_by(gedung_id=gedung.id).all()}
+    # Ambil daftar kamar gedung binaan & siapkan tracker penghuni untuk alokasi acak/otomatis seimbang
+    kamar_list = Kamar.query.filter_by(gedung_id=gedung.id).order_by(Kamar.lantai, Kamar.nomor_kamar).all()
+    if not kamar_list:
+        default_rooms = [
+            ('101', 1), ('102', 1), ('103', 1), ('104', 1),
+            ('201', 2), ('202', 2), ('203', 2), ('204', 2),
+            ('301', 3), ('302', 3), ('303', 3), ('304', 3),
+        ]
+        for n_k, lt in default_rooms:
+            k = Kamar(gedung_id=gedung.id, nomor_kamar=n_k, lantai=lt)
+            db.session.add(k)
+        db.session.flush()
+        kamar_list = Kamar.query.filter_by(gedung_id=gedung.id).order_by(Kamar.lantai, Kamar.nomor_kamar).all()
+
+    kamar_by_nomor = {k.nomor_kamar: k for k in kamar_list}
+    room_occupancy = {
+        k.id: (k.penghuni.count() if hasattr(k.penghuni, 'count') else len(k.penghuni))
+        for k in kamar_list
+    }
 
     success_count = 0
     updated_count = 0
@@ -401,18 +498,20 @@ def import_mahasiswa_csv():
     seen_file_nims = set()
 
     for idx, row in enumerate(reader, start=2):
-        row_clean = {k.strip().lower(): (v.strip() if v else '') for k, v in row.items() if k}
-        nim = row_clean.get('nim', '')
-        nama = row_clean.get('nama', '')
-        email = row_clean.get('email') or None
-        nomor_kamar = row_clean.get('nomor_kamar') or '101'
-        lantai_str = row_clean.get('lantai') or '1'
-        jekel = row_clean.get('jekel') or None
-        asal = row_clean.get('asal') or None
-        password = row_clean.get('password') or 'password123'
+        nim = str(row.get(header_map.get("nim", ""), "")).strip()
+        nama = str(row.get(header_map.get("nama", ""), "")).strip()
+        nama_panggilan = str(row.get(header_map.get("nama_panggilan", ""), "")).strip() or None
+        email = str(row.get(header_map.get("email", ""), "")).strip() or None
+        asal = str(row.get(header_map.get("asal", ""), "")).strip() or None
+        nomor_kamar_raw = str(row.get(header_map.get("nomor_kamar", ""), "")).strip()
+        lantai_raw = str(row.get(header_map.get("lantai", ""), "")).strip()
+        jekel = str(row.get(header_map.get("jekel", ""), "")).strip() or None
+        # Password awal berasal dari NIM (atau fallback ke nilai eksplisit bila ada)
+        custom_pwd = str(row.get(header_map.get("password", ""), "")).strip()
+        initial_password = custom_pwd if custom_pwd else nim
 
         if not nim or not nama:
-            error_list.append(f"Baris {idx}: NIM dan Nama wajib diisi.")
+            error_list.append(f"Baris {idx}: NIM dan Nama Panjang wajib diisi.")
             continue
 
         if nim in seen_file_nims:
@@ -420,24 +519,10 @@ def import_mahasiswa_csv():
             continue
         seen_file_nims.add(nim)
 
-        try:
-            lantai = int(lantai_str)
-        except ValueError:
-            lantai = 1
-
-        # Pastikan kamar berada pada gedung fasilitator
-        if nomor_kamar not in kamar_map:
-            new_k = Kamar(gedung_id=gedung.id, nomor_kamar=nomor_kamar, lantai=lantai)
-            db.session.add(new_k)
-            db.session.flush()
-            kamar_map[nomor_kamar] = new_k
-
-        target_kamar = kamar_map[nomor_kamar]
-
         # Cek apakah user mahasiswa sudah ada
         existing_user = User.query.filter_by(nim=nim).first()
         if existing_user:
-            # Jika mahasiswa sudah ada di gedung lain, cegah pembajakan gedung tanpa izin admin!
+            # Jika mahasiswa sudah ada di gedung lain, cegah pembajakan gedung tanpa izin admin
             if existing_user.kamar_ref and existing_user.kamar_ref.gedung_id != gedung.id:
                 error_list.append(
                     f"Baris {idx}: NIM '{nim}' sudah terdaftar di gedung lain ({existing_user.kamar_ref.gedung.nama_gedung}). Tidak dapat dimutasi antar-gedung via import fasilitator."
@@ -446,26 +531,67 @@ def import_mahasiswa_csv():
 
             # Update info mahasiswa di gedung ini
             existing_user.nama = nama
-            existing_user.kamar_id = target_kamar.id
+            if nama_panggilan:
+                existing_user.nama_panggilan = nama_panggilan
             if email:
                 existing_user.email = email
             if asal:
                 existing_user.asal = asal
             if jekel:
                 existing_user.jekel = jekel
+
+            # Jika mahasiswa belum punya kamar di gedung ini atau nomor_kamar spesifik diisi
+            if nomor_kamar_raw:
+                if nomor_kamar_raw not in kamar_by_nomor:
+                    try:
+                        lt = int(lantai_raw) if lantai_raw else 1
+                    except ValueError:
+                        lt = 1
+                    new_k = Kamar(gedung_id=gedung.id, nomor_kamar=nomor_kamar_raw, lantai=lt)
+                    db.session.add(new_k)
+                    db.session.flush()
+                    kamar_by_nomor[nomor_kamar_raw] = new_k
+                    kamar_list.append(new_k)
+                    room_occupancy[new_k.id] = 0
+                existing_user.kamar_id = kamar_by_nomor[nomor_kamar_raw].id
+            elif not existing_user.kamar_id:
+                # Alokasi kamar otomatis/acak jika belum memiliki kamar
+                target_kamar = assign_room_in_building(gedung.id, room_occupancy)
+                existing_user.kamar_id = target_kamar.id
+
             updated_count += 1
         else:
-            # Buat mahasiswa baru di gedung ini
+            # Tentukan kamar untuk mahasiswa baru
+            if nomor_kamar_raw:
+                if nomor_kamar_raw not in kamar_by_nomor:
+                    try:
+                        lt = int(lantai_raw) if lantai_raw else 1
+                    except ValueError:
+                        lt = 1
+                    new_k = Kamar(gedung_id=gedung.id, nomor_kamar=nomor_kamar_raw, lantai=lt)
+                    db.session.add(new_k)
+                    db.session.flush()
+                    kamar_by_nomor[nomor_kamar_raw] = new_k
+                    kamar_list.append(new_k)
+                    room_occupancy[new_k.id] = 0
+                target_kamar = kamar_by_nomor[nomor_kamar_raw]
+                room_occupancy[target_kamar.id] = room_occupancy.get(target_kamar.id, 0) + 1
+            else:
+                # Alokasi kamar dan lantai secara otomatis/acak oleh sistem
+                target_kamar = assign_room_in_building(gedung.id, room_occupancy)
+
             new_student = User(
                 nim=nim,
                 nama=nama,
+                nama_panggilan=nama_panggilan,
                 role='mahasiswa',
                 kamar_id=target_kamar.id,
                 email=email,
                 asal=asal,
                 jekel=jekel
             )
-            new_student.set_password(password)
+            # Password awal mahasiswa berasal dari NIM
+            new_student.set_password(initial_password)
             db.session.add(new_student)
             success_count += 1
 

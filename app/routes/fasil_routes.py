@@ -50,9 +50,21 @@ from app.controllers.fasil_polygon_controller import (
     hapus_polygon_fasil,
     toggle_active_polygon_fasil,
 )
+from app.controllers.fasil_dashboard_controller import get_dashboard_summary
 
 # ─── Blueprint Definition ────────────────────────────────────────────────────
 fasil_bp = Blueprint('fasil', __name__)
+
+
+# ─── Dashboard Summary Route ─────────────────────────────────────────────────
+
+# GET  /api/fasil/dashboard/summary → Data agregat komprehensif dashboard fasilitator
+fasil_bp.add_url_rule(
+    '/dashboard/summary',
+    view_func=fasil_required(get_dashboard_summary),
+    methods=['GET'],
+    endpoint='get_dashboard_summary'
+)
 
 
 # ─── Sesi Absensi Routes ─────────────────────────────────────────────────────

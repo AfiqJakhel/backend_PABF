@@ -112,18 +112,47 @@ class PresensiRepository:
         Hitung ringkasan kehadiran per mahasiswa dalam rentang tanggal.
         Mengembalikan list dict: {nim, nama, hadir, terlambat, alfa, izin, sakit, total}.
         """
-        query = (
+        # 1. Ambil seluruh mahasiswa yang terdaftar di gedung binaan fasilitator
+        mhs_query = (
             db.session.query(
                 User.nim,
                 User.nama,
                 Gedung.nama_gedung,
-                Kamar.nomor_kamar,
+                Kamar.nomor_kamar
+            )
+            .join(Kamar, User.kamar_id == Kamar.id)
+            .join(Gedung, Kamar.gedung_id == Gedung.id)
+            .filter(User.role == 'mahasiswa')
+        )
+        if gedung_id is not None:
+            mhs_query = mhs_query.filter(Kamar.gedung_id == gedung_id)
+
+        all_students = mhs_query.all()
+
+        # Inisialisasi struktur rekap untuk seluruh mahasiswa di gedung tersebut
+        summary: dict = {}
+        for nim, nama, nama_gedung, nomor_kamar in all_students:
+            summary[nim] = {
+                'nim': nim,
+                'nama': nama,
+                'gedung': nama_gedung or '',
+                'kamar': nomor_kamar or '-',
+                'hadir': 0,
+                'terlambat': 0,
+                'alfa': 0,
+                'izin': 0,
+                'sakit': 0
+            }
+
+        # 2. Ambil agregasi kehadiran presensi dalam rentang tanggal
+        query = (
+            db.session.query(
+                User.nim,
                 Presensi.status,
                 func.count(Presensi.id).label('jumlah')
             )
             .join(Presensi, User.id == Presensi.user_id)
-            .outerjoin(Kamar, User.kamar_id == Kamar.id)
-            .outerjoin(Gedung, Kamar.gedung_id == Gedung.id)
+            .join(Kamar, User.kamar_id == Kamar.id)
             .filter(
                 Presensi.tanggal >= tanggal_mulai,
                 Presensi.tanggal <= tanggal_selesai,
@@ -131,34 +160,17 @@ class PresensiRepository:
             )
         )
         if gedung_id is not None:
-            query = query.filter(
-                db.or_(
-                    Presensi.gedung_id == gedung_id,
-                    Kamar.gedung_id == gedung_id
-                )
-            )
-        if tipe_sesi:
+            query = query.filter(Kamar.gedung_id == gedung_id)
+        if tipe_sesi and tipe_sesi != 'all':
             query = query.filter(Presensi.sesi == tipe_sesi)
 
-        rows = query.group_by(
-            User.nim, User.nama, Gedung.nama_gedung, Kamar.nomor_kamar, Presensi.status
-        ).all()
+        rows = query.group_by(User.nim, Presensi.status).all()
 
-        # Pivot: struktur per mahasiswa
-        summary: dict = {}
-        for nim, nama, nama_gedung, nomor_kamar, status, jumlah in rows:
-            if nim not in summary:
-                summary[nim] = {
-                    'nim': nim, 'nama': nama,
-                    'gedung': nama_gedung,
-                    'kamar': nomor_kamar,
-                    'hadir': 0, 'terlambat': 0,
-                    'alfa': 0, 'izin': 0, 'sakit': 0
-                }
-            if status in summary[nim]:
+        for nim, status, jumlah in rows:
+            if nim in summary and status in summary[nim]:
                 summary[nim][status] = jumlah
 
-        # Hitung total
+        # Hitung total dan persentase
         result = []
         for data in summary.values():
             data['total'] = sum(data[k] for k in ('hadir', 'terlambat', 'alfa', 'izin', 'sakit'))

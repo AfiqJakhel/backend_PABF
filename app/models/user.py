@@ -8,6 +8,7 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     nim = db.Column(db.String(20), unique=True, nullable=False, index=True)
     nama = db.Column(db.String(100), nullable=False)
+    nama_panggilan = db.Column(db.String(50), nullable=True)
     asal = db.Column(db.String(100), nullable=True)
     jekel = db.Column(db.String(10), nullable=True) # 'L' atau 'P'
     email = db.Column(db.String(120), unique=True, nullable=True)
@@ -23,10 +24,11 @@ class User(db.Model):
     daftar_izin_divalidasi = db.relationship('Izin', foreign_keys='Izin.disetujui_oleh', backref='validator', lazy='dynamic')
 
     def __init__(self, nim: str = "", nama: str = "", role: str = "mahasiswa", kamar_id: int = None,
-                 asal: str = None, jekel: str = None, email: str = None, **kwargs):
+                 asal: str = None, jekel: str = None, email: str = None, nama_panggilan: str = None, **kwargs):
         super().__init__(**kwargs)
         self.nim = nim
         self.nama = nama
+        self.nama_panggilan = nama_panggilan
         self.role = role
         self.kamar_id = kamar_id
         self.asal = asal
@@ -60,6 +62,7 @@ class User(db.Model):
             'id': self.id,
             'nim': self.nim,
             'nama': self.nama,
+            'nama_panggilan': self.nama_panggilan,
             'asal': self.asal,
             'jekel': self.jekel,
             'email': self.email,

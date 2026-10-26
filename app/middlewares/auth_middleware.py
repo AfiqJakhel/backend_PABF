@@ -1,7 +1,8 @@
 from functools import wraps
 
-from flask import jsonify
-from flask_jwt_extended import get_jwt, verify_jwt_in_request
+from flask import jsonify, g
+from flask_jwt_extended import get_jwt, get_jwt_identity, verify_jwt_in_request
+from app.models.user import User
 
 
 def auth_required(fn):
@@ -21,8 +22,11 @@ def auth_required(fn):
     return wrapper
 
 
-def role_required(*allowed_roles):
-    """Protect an endpoint and enforce JWT role claims at the API boundary."""
+def role_required(*allowed_roles, verify_db: bool = False):
+    """
+    Protect an endpoint and enforce role claims.
+    Jika verify_db=True, verifikasi role langsung terhadap database untuk aksi sensitif.
+    """
     def decorator(fn):
         @wraps(fn)
         def wrapper(*args, **kwargs):
@@ -34,12 +38,37 @@ def role_required(*allowed_roles):
                     "message": "Token tidak valid atau sudah kadaluarsa. Silakan login kembali.",
                     "data": None,
                 }), 401
-            if get_jwt().get("role") not in allowed_roles:
+
+            claims = get_jwt()
+            role_claim = claims.get("role")
+
+            if role_claim not in allowed_roles:
                 return jsonify({
                     "success": False,
                     "message": "Akses ditolak untuk role pengguna ini.",
                     "data": None,
                 }), 403
+
+            if verify_db:
+                user_id = get_jwt_identity()
+                user = User.query.get(user_id)
+                if not user:
+                    return jsonify({
+                        "success": False,
+                        "message": "Pengguna tidak ditemukan atau sesi tidak valid. Silakan login kembali.",
+                        "data": None,
+                    }), 401
+
+                if user.role not in allowed_roles:
+                    return jsonify({
+                        "success": False,
+                        "message": "Akses ditolak untuk role pengguna ini.",
+                        "data": None,
+                    }), 403
+
+                # Simpan user objek di request context g untuk dipakai controller
+                g.current_user = user
+
             return fn(*args, **kwargs)
         return wrapper
     return decorator

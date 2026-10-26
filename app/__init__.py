@@ -1,8 +1,11 @@
 from flask import Flask, send_from_directory
 from config import DevelopmentConfig
 from .core.extensions import db, jwt, cors, migrate
-from .models import User, Gedung, Kamar, Presensi, Izin, SesiAbsensi, AreaAbsensi
-from .routes import auth_bp, fasil_bp, mahasiswa_bp, admin_bp
+from .models import (
+    User, Gedung, Kamar, Presensi, Izin, SesiAbsensi, AreaAbsensi,
+    SesiPresensi, IzinDokumen, FasilitatorGedung
+)
+from .routes import auth_bp, fasil_bp, mahasiswa_bp, admin_bp, izin_bp, sesi_bp
 
 
 def create_app(config_class=DevelopmentConfig):
@@ -20,8 +23,10 @@ def create_app(config_class=DevelopmentConfig):
     app.register_blueprint(fasil_bp, url_prefix='/api/fasil')
     app.register_blueprint(mahasiswa_bp, url_prefix='/api/mahasiswa')
     app.register_blueprint(admin_bp, url_prefix='/api/admin')
+    app.register_blueprint(izin_bp, url_prefix='/api/izin')
+    app.register_blueprint(sesi_bp, url_prefix='/api/sesi')
 
-    # Serve static uploaded files (e.g. foto absensi)
+    # Serve static uploaded files (e.g. foto absensi umum)
     @app.route('/uploads/<path:filename>')
     def uploaded_file(filename):
         return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
