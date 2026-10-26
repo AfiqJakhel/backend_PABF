@@ -158,6 +158,14 @@ class BuildingAuthorizationSecurityTest(unittest.TestCase):
         rifqi_presensi_id = rifqi_item["id"]
         rifqi_user_id = rifqi_item["user_id"]
 
+        if not rifqi_presensi_id:
+            _, res_c = self._post_json(
+                f"{BASE_URL}/api/fasil/presensi/manual",
+                {"user_id": rifqi_user_id, "sesi": "subuh", "status": "alfa"},
+                headers=self.headers_b
+            )
+            rifqi_presensi_id = res_c["data"]["id"]
+
         # Fasil A attempts to update status of attendance in Gedung B
         status_patch, res_patch = self._patch_json(
             f"{BASE_URL}/api/fasil/presensi/{rifqi_presensi_id}/status",

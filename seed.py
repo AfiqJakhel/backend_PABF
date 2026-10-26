@@ -89,6 +89,30 @@ def seed_database():
                 "jekel": "L",
                 "email": "fasil.farhan@asrama.ac.id",
                 "password": "fasil123"
+            },
+            {
+                "nim": "fasil_putri01",
+                "nama": "Usth. Aisyah (Fasilitator Putri A)",
+                "asal": "Padang",
+                "jekel": "P",
+                "email": "fasil.aisyah@asrama.ac.id",
+                "password": "fasil123"
+            },
+            {
+                "nim": "fasil_putri02",
+                "nama": "Usth. Fatimah (Fasilitator Putri B)",
+                "asal": "Solok",
+                "jekel": "P",
+                "email": "fasil.fatimah@asrama.ac.id",
+                "password": "fasil123"
+            },
+            {
+                "nim": "fasil_putri03",
+                "nama": "Usth. Khadijah (Fasilitator Putri C)",
+                "asal": "Bukittinggi",
+                "jekel": "P",
+                "email": "fasil.khadijah@asrama.ac.id",
+                "password": "fasil123"
             }
         ]
 
@@ -119,12 +143,15 @@ def seed_database():
         db.session.commit()
 
         # =========================================================================
-        # 2. SEED 3 GEDUNG & RELASI FASILITATOR
+        # 2. SEED 6 GEDUNG (3 PUTRA + 3 PUTRI) & RELASI FASILITATOR
         # =========================================================================
         gedung_specs = [
-            {"nama": "Gedung Asrama Putra A", "fasil_nim": "fasil01"},
-            {"nama": "Gedung Asrama Putra B", "fasil_nim": "fasil02"},
-            {"nama": "Gedung Asrama Putra C", "fasil_nim": "fasil03"},
+            {"nama": "Gedung Asrama Putra A", "jenis_penghuni": "L", "fasil_nim": "fasil01"},
+            {"nama": "Gedung Asrama Putra B", "jenis_penghuni": "L", "fasil_nim": "fasil02"},
+            {"nama": "Gedung Asrama Putra C", "jenis_penghuni": "L", "fasil_nim": "fasil03"},
+            {"nama": "Gedung Asrama Putri A", "jenis_penghuni": "P", "fasil_nim": "fasil_putri01"},
+            {"nama": "Gedung Asrama Putri B", "jenis_penghuni": "P", "fasil_nim": "fasil_putri02"},
+            {"nama": "Gedung Asrama Putri C", "jenis_penghuni": "P", "fasil_nim": "fasil_putri03"},
         ]
 
         gedungs = {}
@@ -134,12 +161,14 @@ def seed_database():
             if not gedung:
                 gedung = Gedung(
                     nama_gedung=g_spec["nama"],
+                    jenis_penghuni=g_spec["jenis_penghuni"],
                     user_id=fasil_obj.id
                 )
                 db.session.add(gedung)
                 db.session.flush()
-                print(f"[OK] Gedung '{gedung.nama_gedung}' dibuat (Fasil: {fasil_obj.nama})")
+                print(f"[OK] Gedung '{gedung.nama_gedung}' ({gedung.jenis_penghuni}) dibuat (Fasil: {fasil_obj.nama})")
             else:
+                gedung.jenis_penghuni = g_spec["jenis_penghuni"]
                 gedung.user_id = fasil_obj.id
             gedungs[g_spec["nama"]] = gedung
 
@@ -184,39 +213,16 @@ def seed_database():
         db.session.commit()
 
         # =========================================================================
-        # 4. SEED KAMAR DI SETIAP GEDUNG
+        # 4. SEED 48 KAMAR PER GEDUNG (16 KAMAR/LANTAI x 3 LANTAI = 288 KAMAR TOTAL)
         # =========================================================================
-        # Gedung A: kamar 101, 102, 103, 204, 205 (5 kamar, masing-masing 2 mhs)
-        # Gedung B: kamar 101, 102, 103, 201, 202
-        # Gedung C: kamar 101, 102, 103, 201, 202
-        kamar_room_list = {
-            "Gedung Asrama Putra A": [
-                {"nomor": "101", "lantai": 1},
-                {"nomor": "102", "lantai": 1},
-                {"nomor": "103", "lantai": 1},
-                {"nomor": "204", "lantai": 2},
-                {"nomor": "205", "lantai": 2},
-            ],
-            "Gedung Asrama Putra B": [
-                {"nomor": "101", "lantai": 1},
-                {"nomor": "102", "lantai": 1},
-                {"nomor": "103", "lantai": 1},
-                {"nomor": "201", "lantai": 2},
-                {"nomor": "202", "lantai": 2},
-            ],
-            "Gedung Asrama Putra C": [
-                {"nomor": "101", "lantai": 1},
-                {"nomor": "102", "lantai": 1},
-                {"nomor": "103", "lantai": 1},
-                {"nomor": "201", "lantai": 2},
-                {"nomor": "202", "lantai": 2},
-            ],
-        }
+        standard_48_rooms = []
+        for lt in range(1, 4):
+            for rm in range(1, 17):
+                standard_48_rooms.append({"nomor": f"{lt}{rm:02d}", "lantai": lt})
 
         kamars = {}
-        for g_nama, rooms in kamar_room_list.items():
-            g_obj = gedungs[g_nama]
-            for r in rooms:
+        for g_nama, g_obj in gedungs.items():
+            for r in standard_48_rooms:
                 kmr = Kamar.query.filter_by(gedung_id=g_obj.id, nomor_kamar=r["nomor"]).first()
                 if not kmr:
                     kmr = Kamar(gedung_id=g_obj.id, nomor_kamar=r["nomor"], lantai=r["lantai"])
@@ -225,7 +231,7 @@ def seed_database():
                 kamars[(g_nama, r["nomor"])] = kmr
 
         db.session.commit()
-        print("[OK] Kamar-kamar di ketiga gedung siap.")
+        print("[OK] Total 288 Kamar (48 kamar per gedung x 6 gedung) siap.")
 
         # =========================================================================
         # 5. SEED 10 MAHASISWA PER GEDUNG (TOTAL 30 MAHASISWA)
@@ -267,6 +273,42 @@ def seed_database():
                 {"nim": "2211523009", "nama": "Miftahul Huda", "asal": "Solok Selatan", "kamar": "202"},
                 {"nim": "2211523010", "nama": "Naufal Rizky", "asal": "Pasaman", "kamar": "202"},
             ],
+            "Gedung Asrama Putri A": [
+                {"nim": "2211524001", "nama": "Aisyah Humaira", "asal": "Padang", "kamar": "101", "jekel": "P"},
+                {"nim": "2211524002", "nama": "Bella Safitri", "asal": "Bukittinggi", "kamar": "101", "jekel": "P"},
+                {"nim": "2211524003", "nama": "Citra Lestari", "asal": "Payakumbuh", "kamar": "102", "jekel": "P"},
+                {"nim": "2211524004", "nama": "Dina Rahmawati", "asal": "Solok", "kamar": "102", "jekel": "P"},
+                {"nim": "2211524005", "nama": "Elsa Permata", "asal": "Pariaman", "kamar": "103", "jekel": "P"},
+                {"nim": "2211524006", "nama": "Fani Anggraini", "asal": "Batusangkar", "kamar": "103", "jekel": "P"},
+                {"nim": "2211524007", "nama": "Gita Maharani", "asal": "Padang Panjang", "kamar": "201", "jekel": "P"},
+                {"nim": "2211524008", "nama": "Hana Salsabila", "asal": "Pekanbaru", "kamar": "201", "jekel": "P"},
+                {"nim": "2211524009", "nama": "Indah Wahyuni", "asal": "Medan", "kamar": "202", "jekel": "P"},
+                {"nim": "2211524010", "nama": "Jihan Nabila", "asal": "Jambi", "kamar": "202", "jekel": "P"},
+            ],
+            "Gedung Asrama Putri B": [
+                {"nim": "2211525001", "nama": "Khadijah Putri", "asal": "Padang", "kamar": "101", "jekel": "P"},
+                {"nim": "2211525002", "nama": "Larasati Dewi", "asal": "Solok", "kamar": "101", "jekel": "P"},
+                {"nim": "2211525003", "nama": "Mawaddah Warahmah", "asal": "Bukittinggi", "kamar": "102", "jekel": "P"},
+                {"nim": "2211525004", "nama": "Nadia Fitriani", "asal": "Payakumbuh", "kamar": "102", "jekel": "P"},
+                {"nim": "2211525005", "nama": "Olivia Zahra", "asal": "Sawahlunto", "kamar": "103", "jekel": "P"},
+                {"nim": "2211525006", "nama": "Putri Ramadhani", "asal": "Pariaman", "kamar": "103", "jekel": "P"},
+                {"nim": "2211525007", "nama": "Qonita Azizah", "asal": "Dharmasraya", "kamar": "201", "jekel": "P"},
+                {"nim": "2211525008", "nama": "Rania Syakira", "asal": "Sijunjung", "kamar": "201", "jekel": "P"},
+                {"nim": "2211525009", "nama": "Salma Azzahra", "asal": "Pesisir Selatan", "kamar": "202", "jekel": "P"},
+                {"nim": "2211525010", "nama": "Tia Anggraini", "asal": "Padang", "kamar": "202", "jekel": "P"},
+            ],
+            "Gedung Asrama Putri C": [
+                {"nim": "2211526001", "nama": "Ulfa Nurul", "asal": "Padang", "kamar": "101", "jekel": "P"},
+                {"nim": "2211526002", "nama": "Vina Panduwinata", "asal": "Solok Selatan", "kamar": "101", "jekel": "P"},
+                {"nim": "2211526003", "nama": "Winda Septiani", "asal": "Bukittinggi", "kamar": "102", "jekel": "P"},
+                {"nim": "2211526004", "nama": "Xenia Maharani", "asal": "Payakumbuh", "kamar": "102", "jekel": "P"},
+                {"nim": "2211526005", "nama": "Yasmine Amalia", "asal": "Batusangkar", "kamar": "103", "jekel": "P"},
+                {"nim": "2211526006", "nama": "Zahra Khairunnisa", "asal": "Padang Panjang", "kamar": "103", "jekel": "P"},
+                {"nim": "2211526007", "nama": "Anisa Rahma", "asal": "Pasaman", "kamar": "201", "jekel": "P"},
+                {"nim": "2211526008", "nama": "Bunga Citra", "asal": "Lubuk Basung", "kamar": "201", "jekel": "P"},
+                {"nim": "2211526009", "nama": "Cut Mutia", "asal": "Aceh", "kamar": "202", "jekel": "P"},
+                {"nim": "2211526010", "nama": "Devi Permatasari", "asal": "Medan", "kamar": "202", "jekel": "P"},
+            ],
         }
 
         mhs_objects = {}
@@ -280,7 +322,7 @@ def seed_database():
                         nama=s["nama"],
                         role='mahasiswa',
                         asal=s["asal"],
-                        jekel='L',
+                        jekel=s.get("jekel", "L"),
                         email=f"{s['nim']}@student.unand.ac.id",
                         kamar_id=kamar_obj.id
                     )
@@ -290,15 +332,16 @@ def seed_database():
                 else:
                     mhs.nama = s["nama"]
                     mhs.asal = s["asal"]
+                    mhs.jekel = s.get("jekel", "L")
                     mhs.kamar_id = kamar_obj.id
                     mhs.set_password('password123')
                 mhs_objects[s["nim"]] = mhs
 
         db.session.commit()
-        print(f"[OK] Total 30 Mahasiswa (10 orang per gedung) berhasil di-seed.")
+        print(f"[OK] Total 60 Mahasiswa (10 orang per gedung x 6 gedung) berhasil di-seed.")
 
         # =========================================================================
-        # 6. SEED AREA POLYGON ABSENSI (3 GEDUNG)
+        # 6. SEED AREA POLYGON ABSENSI (6 GEDUNG)
         # =========================================================================
         area_specs = [
             {
@@ -321,6 +364,27 @@ def seed_database():
                 "nama": "Area Presensi Asrama Putra C",
                 "deskripsi": "Zona radius geofencing Gedung Asrama Putra C Kampus Limau Manis",
                 "polygon_wkt": "POLYGON((100.4680 -0.9160, 100.4720 -0.9160, 100.4720 -0.9130, 100.4680 -0.9130, 100.4680 -0.9160))"
+            },
+            {
+                "gedung": gedungs["Gedung Asrama Putri A"],
+                "fasil": fasils["fasil_putri01"],
+                "nama": "Area Presensi Asrama Putri A",
+                "deskripsi": "Zona radius geofencing Gedung Asrama Putri A Kampus Limau Manis",
+                "polygon_wkt": "POLYGON((100.4590 -0.9125, 100.4630 -0.9125, 100.4630 -0.9095, 100.4590 -0.9095, 100.4590 -0.9125))"
+            },
+            {
+                "gedung": gedungs["Gedung Asrama Putri B"],
+                "fasil": fasils["fasil_putri02"],
+                "nama": "Area Presensi Asrama Putri B",
+                "deskripsi": "Zona radius geofencing Gedung Asrama Putri B Kampus Limau Manis",
+                "polygon_wkt": "POLYGON((100.4635 -0.9125, 100.4675 -0.9125, 100.4675 -0.9095, 100.4635 -0.9095, 100.4635 -0.9125))"
+            },
+            {
+                "gedung": gedungs["Gedung Asrama Putri C"],
+                "fasil": fasils["fasil_putri03"],
+                "nama": "Area Presensi Asrama Putri C",
+                "deskripsi": "Zona radius geofencing Gedung Asrama Putri C Kampus Limau Manis",
+                "polygon_wkt": "POLYGON((100.4680 -0.9125, 100.4720 -0.9125, 100.4720 -0.9095, 100.4680 -0.9095, 100.4680 -0.9125))"
             },
         ]
 

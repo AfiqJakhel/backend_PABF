@@ -310,11 +310,17 @@ def get_daftar_verifikasi():
             # Validasi batas akhir waktu sesi:
             # Jika waktu presensi melewati batas akhir sesi (misal subuh berakhir 07:00 tapi absen jam 16:54),
             # maka presensi dianggap tidak sah dan status otomatis menjadi ALFA.
+            # Catatan: Presensi yang telah disetujui/diverifikasi oleh Fasilitator atau berstatus 'hadir'/'izin'/'sakit'
+            # tidak boleh dioverride kembali menjadi ALFA.
             is_lewat_batas_waktu = False
             if p.waktu and waktu_selesai and p.waktu > waktu_selesai:
                 is_lewat_batas_waktu = True
 
-            if is_lewat_batas_waktu and p.status.lower() not in ("izin", "sakit"):
+            is_verified_fasil = bool(
+                p.keterangan and any(kw in p.keterangan.lower() for kw in ("diverifikasi", "disetujui", "fasil"))
+            )
+
+            if is_lewat_batas_waktu and p.status.lower() not in ("izin", "sakit", "hadir") and not is_verified_fasil:
                 current_status = "alfa"
                 item['status'] = "alfa"
                 ket_lewat = "Presensi melewati batas waktu sesi (Alfa)"
